@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CodeNeuron - AI Answer Verification & Validation Platform</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;600&family=Inter:wght@400;500;600&family=Outfit:wght@400;600;800&display=swap" rel="stylesheet">
+    <!-- Main Style Stylesheet -->
+    <link rel="stylesheet" href="index.css">
+</head>
+<body>
+    <!-- Background Animated Glow Nodes -->
+    <div class="ambient-glow bg-blue"></div>
+    <div class="ambient-glow bg-purple"></div>
+
+    <div class="app-container">
+        <!-- Sidebar Navigation & History Logs -->
+        <aside class="sidebar glass-panel">
+            <div class="brand">
+                <div class="brand-logo">
+                    <span class="neuron-node"></span>
+                    <span class="neuron-pulse"></span>
+                </div>
+                <h2>CodeNeuron</h2>
+            </div>
+            
+            <div class="sidebar-section">
+                <h3>Verification Settings</h3>
+                <div class="form-group">
+                    <label for="verification-mode">Engine Model</label>
+                    <select id="verification-mode" class="input-control">
+                        <option value="nli">Local NLI (bart-large-mnli)</option>
+                        <option value="gemini" selected>Grounded Gemini 1.5 Flash</option>
+                    </select>
+                </div>
+                
+                <div class="form-group" id="api-key-group">
+                    <label for="gemini-api-key">Gemini API Key</label>
+                    <input type="password" id="gemini-api-key" class="input-control" placeholder="Using default template key..." autocomplete="new-password">
+                </div>
+
+                <div class="form-group">
+                    <label for="source-model">Source LLM</label>
+                    <input type="text" id="source-model" class="input-control" value="ChatGPT" placeholder="e.g. Claude 3.5, ChatGPT">
+                </div>
+            </div>
+
+            <div class="sidebar-section history-section">
+                <h3>Analysis History</h3>
+                <div id="history-list" class="history-list">
+                    <div class="empty-history">No past analyses found.</div>
+                </div>
+            </div>
+
+            <div class="sidebar-footer">
+                <p>CodeNeuron v1.1.0</p>
+                <div class="health-indicator">
+                    <span class="pulse-dot green"></span>
+                    <span>API: Connected</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Dashboard Workspace -->
+        <main class="workspace">
+            <header class="workspace-header glass-panel">
+                <h1>AI Answer Verification Platform</h1>
+                <div class="action-buttons">
+                    <button id="btn-export-pdf" class="btn btn-secondary" disabled>Export PDF Report</button>
+                    <button id="btn-demo-data" class="btn btn-secondary">Load Demo Example</button>
+                </div>
+            </header>
+
+            <section class="grid-layout">
+                <!-- Input Panel -->
+                <div class="card glass-panel col-span-6">
+                    <div class="card-header">
+                        <h3>Raw AI Output Input</h3>
+                        <span class="badge label-blue">Prose & Code Supported</span>
+                    </div>
+                    <div class="card-body">
+                        <textarea id="ai-answer-input" class="textarea-control" placeholder="Paste the AI-generated answer here, mixing prose explanations and python code blocks (in ```python...``` blocks)..."></textarea>
+                        <div class="action-bar">
+                            <button id="btn-clear" class="btn btn-secondary">Clear</button>
+                            <button id="btn-verify" class="btn btn-primary">Analyze & Verify</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Live Progress Tracking Panel -->
+                <div id="progress-card" class="card glass-panel col-span-6 hidden">
+                    <div class="card-header">
+                        <h3>Pipeline Execution Progress</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="pipeline-steps">
+                            <div class="pipeline-step" id="step-ingest">
+                                <div class="step-status"><span class="step-spinner"></span></div>
+                                <div class="step-text">Ingesting Answer Metadata</div>
+                            </div>
+                            <div class="pipeline-step" id="step-chunk">
+                                <div class="step-status"><span class="step-bullet"></span></div>
+                                <div class="step-text">Splitting Prose & Code Blocks</div>
+                            </div>
+                            <div class="pipeline-step" id="step-search">
+                                <div class="step-status"><span class="step-bullet"></span></div>
+                                <div class="step-text">Querying Free Wikipedia Search API</div>
+                            </div>
+                            <div class="pipeline-step" id="step-verify">
+                                <div class="step-status"><span class="step-bullet"></span></div>
+                                <div class="step-text">Executing Grounded NLI/Gemini Verifications</div>
+                            </div>
+                            <div class="pipeline-step" id="step-sandbox">
+                                <div class="step-status"><span class="step-bullet"></span></div>
+                                <div class="step-text">Running Code in Isolated Subprocess Sandbox</div>
+                            </div>
+                            <div class="pipeline-step" id="step-aggregate">
+                                <div class="step-status"><span class="step-bullet"></span></div>
+                                <div class="step-text">Compiling Trust Metrics & Scores</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Aggregated Score Gauge Panel -->
+                <div id="results-card" class="card glass-panel col-span-6 hidden">
+                    <div class="card-header">
+                        <h3>Assessment Report</h3>
+                        <span id="verdict-badge" class="badge">UNKNOWN</span>
+                    </div>
+                    <div class="card-body results-body">
+                        <div class="score-container">
+                            <div class="radial-score">
+                                <svg width="120" height="120" viewBox="0 0 120 120">
+                                    <circle class="bg-circle" cx="60" cy="60" r="50"></circle>
+                                    <circle id="score-circle" class="progress-circle" cx="60" cy="60" r="50"></circle>
+                                </svg>
+                                <div class="score-value">
+                                    <span id="trust-percentage">0%</span>
+                                    <small>Trust Score</small>
+                                </div>
+                            </div>
+                            <div class="score-details">
+                                <h4 id="report-summary-title">Awaiting Assessment</h4>
+                                <p id="report-summary-text">Submit an answer above to trigger verification.</p>
+                                <div class="breakdown-pill" id="report-breakdown">Supported/Contradicted counts</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tabbed Analysis Dashboard -->
+                <div id="dashboard-card" class="card glass-panel col-span-12 hidden">
+                    <div class="tab-header">
+                        <button class="tab-btn active" data-tab="tab-prose">Sentence-Level Prose Factual Audit</button>
+                        <button class="tab-btn" data-tab="tab-code">Sandboxed Code Sandbox Console</button>
+                        <button class="tab-btn" data-tab="tab-raw">Raw Verification Telemetry JSON</button>
+                    </div>
+                    
+                    <div class="card-body tab-content-container">
+                        <!-- Prose Analysis Tab -->
+                        <div class="tab-content active" id="tab-prose">
+                            <div class="prose-split-view">
+                                <div class="prose-highlighter-panel">
+                                    <h4>Answer Prose highlighter (Click highlighted sentence to view evidence)</h4>
+                                    <div id="prose-highlighted-text" class="highlighted-text-area">
+                                        <!-- Highlighted content will go here -->
+                                    </div>
+                                </div>
+                                <div class="prose-evidence-drawer" id="evidence-drawer">
+                                    <div class="empty-drawer-state">
+                                        <p>Select a highlighted sentence to view supporting evidence retrieved from Wikipedia.</p>
+                                    </div>
+                                    <div class="drawer-content hidden">
+                                        <div class="drawer-header">
+                                            <h4>Evidence Inspector</h4>
+                                            <span id="evidence-verdict" class="badge">SUPPORTED</span>
+                                        </div>
+                                        <div class="form-group">
+                                            <label>Claim Text</label>
+                                            <blockquote id="evidence-claim-text">""</blockquote>
+                                        </div>
+                                        <div class="form-group">
+                                            <label>Verdict Explanation</label>
+                                            <p id="evidence-explanation-text"></p>
+                                        </div>
+                                        <div class="form-group">
+                                            <label>Evidence Document Source</label>
+                                            <div class="evidence-card">
+                                                <p id="evidence-source-text"></p>
+                                                <div class="evidence-metadata">
+                                                    <span id="evidence-relevance-pill">Match Relevance: 0%</span>
+                                                    <a id="evidence-source-url" href="#" target="_blank">View Wikipedia Article &rarr;</a>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Code Analysis Tab -->
+                        <div class="tab-content" id="tab-code">
+                            <div class="code-analysis-layout">
+                                <div class="code-selector-sidebar">
+                                    <h4>Code Blocks Found</h4>
+                                    <div id="code-blocks-list" class="list-navigation">
+                                        <!-- list of code blocks -->
+                                    </div>
+                                </div>
+                                
+                                <div class="code-inspection-panel" id="code-inspector-panel">
+                                    <div class="empty-drawer-state" id="code-empty-state">
+                                        <p>No Python code blocks detected in this answer.</p>
+                                    </div>
+                                    
+                                    <div class="code-inspector-content hidden" id="code-inspector-content">
+                                        <div class="card-inner-header">
+                                            <h4 id="code-block-title">Python Code Analysis</h4>
+                                            <span id="code-verdict-badge" class="badge">PASS</span>
+                                        </div>
+                                        
+                                        <div class="metrics-grid">
+                                            <div class="metric-card">
+                                                <small>Static Complexity</small>
+                                                <strong id="metric-complexity">LOW</strong>
+                                            </div>
+                                            <div class="metric-card">
+                                                <small>AST Style Lints</small>
+                                                <strong id="metric-lints">0 Errors</strong>
+                                            </div>
+                                            <div class="metric-card">
+                                                <small>Execution Time</small>
+                                                <strong id="metric-time">0.05s</strong>
+                                            </div>
+                                            <div class="metric-card">
+                                                <small>Security Audit</small>
+                                                <strong id="metric-security">0 Issues</strong>
+                                            </div>
+                                        </div>
+
+                                        <div class="code-section-group">
+                                            <div class="section-label">Source Code Block</div>
+                                            <pre class="code-block-container"><code id="code-source-display"></code></pre>
+                                        </div>
+
+                                        <div class="grid-two-column">
+                                            <div class="code-section-group">
+                                                <div class="section-label">Security & Lint Audit Console</div>
+                                                <div id="code-warnings-list" class="warnings-terminal">
+                                                    <!-- Warning statements here -->
+                                                </div>
+                                            </div>
+                                            <div class="code-section-group">
+                                                <div class="section-label">Sanity Unit Assertion Results</div>
+                                                <div id="code-tests-list" class="tests-terminal">
+                                                    <!-- Assertion details here -->
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div class="code-section-group">
+                                            <div class="section-label">Sandboxed Console Output (stdout/stderr)</div>
+                                            <pre class="terminal-container"><code id="code-terminal-display"></code></pre>
+                                        </div>
+                                        
+                                        <div class="code-section-group">
+                                            <div class="section-label">Generated Test Assertions Script</div>
+                                            <pre class="code-block-container"><code id="code-test-source-display"></code></pre>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Raw JSON Payload Tab -->
+                        <div class="tab-content" id="tab-raw">
+                            <div class="raw-payload-panel">
+                                <h4>Full JSON Payload Schema</h4>
+                                <pre class="code-block-container"><code id="raw-json-display">{}</code></pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Scripts -->
+    <script src="index.js"></script>
+</body>
+</html>
