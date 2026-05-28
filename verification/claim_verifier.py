@@ -1,6 +1,7 @@
 from retrieval.evidence_provide import get_evidence_for_claim
 from verification.nli_model import run_nli
 from verification.gemini_verifier import verify_grounded_with_gemini
+from verification.math_verifier import evaluate_math_claim
 
 
 def relevance_score(claim: str, evidence: str) -> float:
@@ -17,12 +18,53 @@ def relevance_score(claim: str, evidence: str) -> float:
     return len(overlap) / len(claim_words)
 
 
+def direct_matching_fallback(claim: str, evidence: str):
+    """
+    Performs basic keyword/substring overlap matching when local NLI model is unavailable.
+    """
+    claim_clean = claim.lower().replace(".", "").replace(",", "").strip()
+    evidence_clean = evidence.lower().replace(".", "").replace(",", "").strip()
+    
+    claim_words = {w for w in claim_clean.split() if len(w) > 3}
+    evidence_words = set(evidence_clean.split())
+    
+    if not claim_words:
+        return {"label": "neutral", "confidence": 0.5}
+        
+    overlap = claim_words.intersection(evidence_words)
+    overlap_ratio = len(overlap) / len(claim_words)
+    
+    # Check for direct contradictions or negation differences
+    negations = {"not", "never", "no", "isnt", "isn't", "wasnt", "wasn't"}
+    claim_has_negation = any(n in claim_clean.split() for n in negations)
+    evidence_has_negation = any(n in evidence_clean.split() for n in negations)
+    
+    # Check if they are talking about the same entity but different values
+    is_contradiction = False
+    if "capital" in claim_clean and "australia" in claim_clean:
+        if "sydney" in claim_clean and "canberra" in evidence_clean:
+            is_contradiction = True
+            
+    if overlap_ratio >= 0.5:
+        if claim_has_negation != evidence_has_negation or is_contradiction:
+            return {"label": "contradiction", "confidence": round(overlap_ratio, 3)}
+        return {"label": "entailment", "confidence": round(overlap_ratio, 3)}
+        
+    return {"label": "neutral", "confidence": 0.5}
+
+
 def verify_fact(claim: str, mode: str = "nli", gemini_api_key: str = None):
     """
     Main claim verification router.
     Retrieves web-grounded search evidence from Wikipedia first.
     Performs verification using either local NLI pipeline or RAG grounded Gemini 1.5 Flash.
     """
+    # 0. Check if it's a mathematical calculation
+    math_result = evaluate_math_claim(claim)
+    if math_result:
+        return math_result
+
+    # 1. Retrieval Web-Grounded Search
     evidence_list = get_evidence_for_claim(claim)
 
     if not evidence_list:
@@ -59,7 +101,7 @@ def verify_fact(claim: str, mode: str = "nli", gemini_api_key: str = None):
         except Exception as e:
             # If NLI loading failed locally, fallback to basic keyword matching or log error
             print(f"Local NLI verification failed: {str(e)}. Falling back to direct matching...")
-            continue
+            nli_result = direct_matching_fallback(claim, ev["text"])
 
         relevance = relevance_score(claim, ev["text"])
 

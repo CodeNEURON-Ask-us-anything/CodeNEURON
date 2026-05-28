@@ -11,6 +11,10 @@ MOCK_EVIDENCE_DB = [
     {
         "text": "Canberra is the capital city of Australia.",
         "source": "https://www.australia.gov.au"
+    },
+    {
+        "text": "New Delhi is the capital city of India.",
+        "source": "https://en.wikipedia.org/wiki/New_Delhi"
     }
 ]
 
@@ -63,11 +67,14 @@ def get_evidence_for_claim(claim: str):
     # Network failure or empty search fallback: Search our local mock database
     results = []
     for ev in MOCK_EVIDENCE_DB:
-        # Simple keyword overlap to see if mock data is relevant
-        claim_words = set(cleaned_claim.lower().split())
-        evidence_words = set(ev["text"].lower().split())
-        if claim_words.intersection(evidence_words):
-            results.append(ev)
+        # Filter out short words (e.g. stop words like "is", "the", "a")
+        claim_words = {w.strip('.,!?;:"()') for w in cleaned_claim.lower().split() if len(w) > 3}
+        evidence_words = {w.strip('.,!?;:"()') for w in ev["text"].lower().split() if len(w) > 3}
+        overlap = claim_words.intersection(evidence_words)
+        if overlap:
+            results.append((len(overlap), ev))
             
-    return results
+    # Sort by highest overlap score first
+    results.sort(key=lambda x: x[0], reverse=True)
+    return [item[1] for item in results]
 

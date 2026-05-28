@@ -313,7 +313,12 @@ open("hacked.txt", "w").write("test")
         
         // 2. Render report assessments text
         reportTitle.textContent = m.summary;
-        reportText.textContent = `Analysis conducted via CodeNeuron ${report.mode_selected.toUpperCase()} engine. Source LLM: ${report.source_model}.`;
+        let reportTextContent = `Analysis conducted via CodeNeuron ${report.mode_selected.toUpperCase()} engine. Source LLM: ${report.source_model}.`;
+        if (report.generated_answer) {
+            reportTextContent = `Generated Answer: "${report.generated_answer}"\n\n` + reportTextContent;
+            aiInput.value = report.generated_answer;
+        }
+        reportText.textContent = reportTextContent;
         reportBreakdown.textContent = m.breakdown;
         
         // Verdict Badge
