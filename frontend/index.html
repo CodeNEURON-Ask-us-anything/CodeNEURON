@@ -48,15 +48,40 @@
                 </div>
             </div>
 
-            <div class="sidebar-section history-section">
+            <div class="sidebar-section">
                 <h3>Analysis History</h3>
-                <div id="history-list" class="history-list">
+                <div class="form-group" style="margin-bottom:12px;">
+                    <input type="text" id="history-search" class="input-control" placeholder="🔍 Search history..." style="font-size:12px; padding:6px 10px;">
+                </div>
+                <div id="history-list" class="history-list" style="max-height: 250px; overflow-y: auto;">
                     <div class="empty-history">No past analyses found.</div>
+                </div>
+                <button id="btn-clear-history" class="btn btn-secondary" style="width:100%; margin-top:10px; padding:6px 12px; font-size:11px;">Clear History</button>
+            </div>
+
+            <div class="sidebar-section">
+                <h3>Engine Configuration</h3>
+                <div class="engine-config-card" style="background:rgba(255,255,255,0.02); border:1px solid var(--border-color); border-radius:8px; padding:12px;">
+                    <div style="display:flex; justify-content:space-between; margin-bottom:6px; font-size:11px; color:var(--text-secondary);">
+                        <span>Status:</span>
+                        <span style="color:var(--color-green); font-weight:600; display:inline-flex; align-items:center; gap:4px;">
+                            <span style="width:6px; height:6px; background-color:var(--color-green); border-radius:50%; display:inline-block; box-shadow:0 0 6px var(--color-green)"></span>
+                            ACTIVE
+                        </span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; margin-bottom:6px; font-size:11px; color:var(--text-secondary);">
+                        <span>Search Retriever:</span>
+                        <span style="color:var(--color-blue); font-weight:600;">DDG + Wiki</span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--text-secondary);">
+                        <span>Model:</span>
+                        <span style="color:var(--color-purple); font-weight:600;">gemini-2.5-flash</span>
+                    </div>
                 </div>
             </div>
 
             <div class="sidebar-footer">
-                <p>CodeNeuron v1.1.0</p>
+                <p>CodeNeuron v1.2.0</p>
                 <div class="health-indicator">
                     <span class="pulse-dot green"></span>
                     <span>API: Connected</span>
@@ -68,7 +93,7 @@
         <main class="workspace">
             <header class="workspace-header glass-panel">
                 <h1>AI Answer Verification Platform</h1>
-                <div class="action-buttons">
+                <div class="action-buttons" style="display:flex; gap:12px;">
                     <button id="btn-export-pdf" class="btn btn-secondary" disabled>Export PDF Report</button>
                     <button id="btn-demo-data" class="btn btn-secondary">Load Demo Example</button>
                 </div>
@@ -78,8 +103,11 @@
                 <!-- Input Panel -->
                 <div class="card glass-panel col-span-6">
                     <div class="card-header">
-                        <h3>Raw AI Output Input</h3>
-                        <span class="badge label-blue">Prose & Code Supported</span>
+                        <h3 id="input-title">Raw AI Output Input</h3>
+                        <div style="display:flex; gap:8px;">
+                            <button id="toggle-verify-mode" class="btn btn-secondary active" style="padding:4px 10px; font-size:11px; border-radius:4px;">Verify AI Output</button>
+                            <button id="toggle-ask-mode" class="btn btn-secondary" style="padding:4px 10px; font-size:11px; border-radius:4px;">Ask Direct Question</button>
+                        </div>
                     </div>
                     <div class="card-body">
                         <textarea id="ai-answer-input" class="textarea-control" placeholder="Paste the AI-generated answer here, mixing prose explanations and python code blocks (in ```python...``` blocks)..."></textarea>
@@ -164,8 +192,11 @@
                         <!-- Prose Analysis Tab -->
                         <div class="tab-content active" id="tab-prose">
                             <div class="prose-split-view">
-                                <div class="prose-highlighter-panel">
-                                    <h4>Answer Prose highlighter (Click highlighted sentence to view evidence)</h4>
+                                <div class="prose-highlighter-panel" style="position:relative;">
+                                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 16px;">
+                                        <h4 style="margin:0;">Answer Prose highlighter (Click highlighted sentence to view evidence)</h4>
+                                        <button id="btn-copy-prose" class="btn btn-secondary" style="padding:4px 10px; font-size:11px; border-radius:4px;">📋 Copy Text</button>
+                                    </div>
                                     <div id="prose-highlighted-text" class="highlighted-text-area">
                                         <!-- Highlighted content will go here -->
                                     </div>
@@ -220,7 +251,10 @@
                                     <div class="code-inspector-content hidden" id="code-inspector-content">
                                         <div class="card-inner-header">
                                             <h4 id="code-block-title">Python Code Analysis</h4>
-                                            <span id="code-verdict-badge" class="badge">PASS</span>
+                                            <div style="display:flex; align-items:center; gap:8px;">
+                                                <button id="btn-copy-code" class="btn btn-secondary" style="padding:4px 10px; font-size:11px; border-radius:4px;">📋 Copy Code</button>
+                                                <span id="code-verdict-badge" class="badge">PASS</span>
+                                            </div>
                                         </div>
                                         
                                         <div class="metrics-grid">
@@ -278,8 +312,11 @@
 
                         <!-- Raw JSON Payload Tab -->
                         <div class="tab-content" id="tab-raw">
-                            <div class="raw-payload-panel">
-                                <h4>Full JSON Payload Schema</h4>
+                            <div class="raw-payload-panel" style="position:relative;">
+                                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                                    <h4 style="margin:0;">Full JSON Payload Schema</h4>
+                                    <button id="btn-copy-json" class="btn btn-secondary" style="padding:4px 10px; font-size:11px; border-radius:4px;">📋 Copy JSON</button>
+                                </div>
                                 <pre class="code-block-container"><code id="raw-json-display">{}</code></pre>
                             </div>
                         </div>

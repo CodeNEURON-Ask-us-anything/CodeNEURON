@@ -127,6 +127,83 @@ open("hacked.txt", "w").write("test")
             document.getElementById(targetTab).classList.add("active");
         });
     });
+
+    // Copy to clipboard helper
+    function setupCopyButton(btnId, targetSelector, isCodeElement = false) {
+        const btn = document.getElementById(btnId);
+        if (!btn) return;
+        btn.addEventListener("click", () => {
+            const target = document.querySelector(targetSelector);
+            if (!target) return;
+            const textToCopy = isCodeElement ? target.textContent : target.innerText;
+            navigator.clipboard.writeText(textToCopy).then(() => {
+                const originalText = btn.textContent;
+                btn.textContent = "✅ Copied!";
+                btn.style.color = "var(--color-green)";
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                    btn.style.color = "";
+                }, 2000);
+            }).catch(err => {
+                console.error("Copy failed", err);
+            });
+        });
+    }
+
+    setupCopyButton("btn-copy-prose", "#prose-highlighted-text");
+    setupCopyButton("btn-copy-code", "#code-source-display", true);
+    setupCopyButton("btn-copy-json", "#raw-json-display", true);
+
+    // Direct Question Mode toggle handling
+    const toggleVerifyMode = document.getElementById("toggle-verify-mode");
+    const toggleAskMode = document.getElementById("toggle-ask-mode");
+    const inputTitle = document.getElementById("input-title");
+    let isDirectQuestionMode = false;
+
+    toggleVerifyMode.addEventListener("click", () => {
+        toggleVerifyMode.classList.add("active");
+        toggleAskMode.classList.remove("active");
+        inputTitle.textContent = "Raw AI Output Input";
+        aiInput.placeholder = "Paste the AI-generated answer here, mixing prose explanations and python code blocks (in ```python...``` blocks)...";
+        isDirectQuestionMode = false;
+    });
+
+    toggleAskMode.addEventListener("click", () => {
+        toggleAskMode.classList.add("active");
+        toggleVerifyMode.classList.remove("active");
+        inputTitle.textContent = "Ask a Direct Question / Prompt";
+        aiInput.placeholder = "Enter any question or prompt (e.g. 'Explain photosynthesis' or 'Write a bubble sort function'). CodeNeuron will generate the response and verify it automatically...";
+        isDirectQuestionMode = true;
+    });
+
+    // Real-time History Filtering
+    const historySearchInput = document.getElementById("history-search");
+    let loadedHistory = [];
+
+    historySearchInput.addEventListener("input", () => {
+        const query = historySearchInput.value.toLowerCase().trim();
+        const filteredHistory = loadedHistory.filter(entry => {
+            return (
+                entry.source_model.toLowerCase().includes(query) ||
+                entry.metrics.overall_verdict.toLowerCase().includes(query) ||
+                entry.mode_selected.toLowerCase().includes(query) ||
+                (entry.generated_answer && entry.generated_answer.toLowerCase().includes(query)) ||
+                (entry.original_prompt && entry.original_prompt.toLowerCase().includes(query))
+            );
+        });
+        renderHistoryList(filteredHistory);
+    });
+
+    // Clear History Database locally & memory
+    const btnClearHistory = document.getElementById("btn-clear-history");
+    btnClearHistory.addEventListener("click", () => {
+        if (confirm("Are you sure you want to clear the analysis history? This cannot be undone.")) {
+            // Delete history JSON entries
+            loadedHistory = [];
+            renderHistoryList([]);
+            resetVerificationStates();
+        }
+    });
     
     // Run Core Full-Stack Analysis
     btnVerify.addEventListener("click", triggerAnalysis);
@@ -149,6 +226,7 @@ open("hacked.txt", "w").write("test")
             const res = await fetch("/api/history");
             if (res.ok) {
                 const history = await res.json();
+                loadedHistory = history;
                 renderHistoryList(history);
             }
         } catch (e) {
