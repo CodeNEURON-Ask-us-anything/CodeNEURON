@@ -15,7 +15,7 @@ def get_gemini_model(api_key: str = None):
     key = api_key or os.environ.get("GEMINI_API_KEY") or DEFAULT_API_KEY
     try:
         genai.configure(api_key=key)
-        return genai.GenerativeModel("models/gemini-1.5-flash")
+        return genai.GenerativeModel("models/gemini-2.5-flash")
     except Exception as e:
         print(f"Error configuring Google Generative AI: {str(e)}")
         return None

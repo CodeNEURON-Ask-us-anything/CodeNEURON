@@ -73,14 +73,24 @@ def auto_generate_answer(text: str, mode: str = "nli", api_key: str = None) -> t
         return math_eval["equation"], True
         
     # 2. Check if it looks like a question or a general prompt
+    prompt_verbs = (
+        "what", "who", "where", "when", "why", "how", "is", "are", "can",
+        "calculate", "solve", "evaluate", "give", "tell", "please",
+        "write", "explain", "create", "list", "show", "generate", "code",
+        "run", "describe", "compare", "define", "implement", "make", "find"
+    )
     is_q = (
         clean_text.endswith("?") or 
-        clean_text.lower().startswith(("what", "who", "where", "when", "why", "how", "is", "are", "can", "calculate", "solve", "evaluate", "give", "tell", "please")) or
-        (len(clean_text.split()) < 12 and not any(c in clean_text for c in [".", ",", "\n", ";"])) # short one-liner phrase
+        clean_text.lower().startswith(prompt_verbs) or
+        (len(clean_text.split()) < 35 and not any(c in clean_text for c in ["\n", "```"]))
     )
     
     if is_q:
         # If it's a math expression with some text like "what is 2 + 2?", let's clean it and evaluate if possible
+        # If the user is making a claim (contains '='), don't treat it as a math question to answer
+        if '=' in clean_text:
+            return text, False
+
         # Check if there is an arithmetic expression inside the question
         math_match = re.search(r'([a-zA-Z\d\.\s\+\-\*\/\^\(\)]+)', clean_text)
         if math_match:
@@ -93,34 +103,52 @@ def auto_generate_answer(text: str, mode: str = "nli", api_key: str = None) -> t
                         expr = expr[len(prefix):].strip()
                 math_eval = evaluate_math_expression(expr)
                 if math_eval:
-                    return f"{text} The answer is: {math_eval['equation']}", True
+                    return math_eval['equation'], True
+
+        # Retrieve web search context to ground answer generation
+        from retrieval.evidence_provide import get_evidence_for_claim
+        evidence_list = get_evidence_for_claim(clean_text)
+        
+        context_str = ""
+        if evidence_list:
+            context_str = "\n".join([f"- Context snippet: {ev['text']} (Source: {ev['source']})" for ev in evidence_list])
 
         # Use Gemini model for answer generation if available
         try:
             model = get_gemini_model(api_key)
             if model:
                 prompt = (
-                    "You are a factual assistant. Provide a concise, highly accurate, and single-sentence answer to the following question. "
-                    "Format it as a statement. If it is a mathematical question, solve it clearly.\n\n"
-                    f"Question: {clean_text}"
+                    "You are a factual assistant. Provide a highly accurate, detailed, and comprehensive answer to the following question. "
+                    "If the question asks for code, provide functional python code blocks wrapped in ```python ... ```.\n"
+                    "If the question asks for math, solve it step-by-step.\n\n"
+                    f"Question: {clean_text}\n\n"
                 )
+                if context_str:
+                    prompt += (
+                        "Use the following retrieved web-grounded search evidence (prioritizing certified sources) to construct your response. "
+                        "Make sure your response is fully grounded in the provided facts:\n"
+                        f"{context_str}\n\n"
+                    )
+                
                 response = model.generate_content(prompt)
                 ans = response.text.strip()
                 if ans:
-                    # Strip any markdown quotes or code blocks if present
-                    ans = ans.replace('"', '').replace("'", "")
                     return ans, True
         except Exception as e:
             print(f"Gemini answer generation fallback triggered due to error: {str(e)}")
 
-        # Local hardcoded fallback for common questions if Gemini fails
+        # Local fallback for questions using search if Gemini is not configured or fails
         q_lower = clean_text.lower()
         if "capital" in q_lower and "india" in q_lower:
             return "New Delhi is the capital city of India.", True
         elif "capital" in q_lower and "australia" in q_lower:
             return "Canberra is the capital city of Australia.", True
             
-        return f"{clean_text} (Self-answered fallback: The answer was verified successfully.)", True
+        if evidence_list:
+            # If we found evidence on the web, return the top snippet as a free fallback answer
+            return f"Search result: {evidence_list[0]['text']} (Source: {evidence_list[0]['source']})", True
+
+        return text, False
         
     return text, False
 
