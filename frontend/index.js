@@ -53,6 +53,36 @@ document.addEventListener("DOMContentLoaded", () => {
     // Raw JSON Display
     const rawJsonDisplay = document.getElementById("raw-json-display");
     
+    // ---- Custom Cursor Setup ----
+    const cursor = document.querySelector(".custom-cursor");
+    const cursorDot = document.querySelector(".custom-cursor-dot");
+
+    if (cursor && cursorDot) {
+        document.addEventListener("mousemove", (e) => {
+            cursor.style.left = e.clientX + "px";
+            cursor.style.top = e.clientY + "px";
+            cursorDot.style.left = e.clientX + "px";
+            cursorDot.style.top = e.clientY + "px";
+        });
+
+        // Trigger circular expand on interactive controls hover
+        const updateHoverables = () => {
+            const hoverables = document.querySelectorAll("a, button, select, input, textarea, .claim-highlighter, .history-item, .tab-btn, .nav-item");
+            hoverables.forEach(item => {
+                // Avoid redundant binding
+                if (item.dataset.cursorBound) return;
+                item.dataset.cursorBound = "true";
+                
+                item.addEventListener("mouseenter", () => cursor.classList.add("hovered"));
+                item.addEventListener("mouseleave", () => cursor.classList.remove("hovered"));
+            });
+        };
+
+        // Run periodically to capture dynamically appended elements
+        updateHoverables();
+        setInterval(updateHoverables, 1000);
+    }
+
     // Active States Cache
     let currentReport = null;
     let selectedClaimIndex = null;
@@ -402,14 +432,58 @@ open("hacked.txt", "w").write("test")
         // Verdict Badge
         verdictBadge.className = `badge ${m.overall_verdict}`;
         verdictBadge.textContent = m.overall_verdict;
+
+        // 3. Update top dynamic widget panel cards
+        const proseStats = document.getElementById("widget-prose-stats");
+        const proseProgress = document.getElementById("widget-prose-progress");
+        const codeStats = document.getElementById("widget-code-stats");
+        const codeProgress = document.getElementById("widget-code-progress");
+        const credibilityScore = document.getElementById("widget-credibility-score");
+        const credibilityBadge = document.getElementById("widget-credibility-badge");
+        const credibilityProgress = document.getElementById("widget-credibility-progress");
+        const sourceStats = document.getElementById("widget-source-stats");
+        const sourceProgress = document.getElementById("widget-source-progress");
+
+        if (proseStats && proseProgress) {
+            proseStats.textContent = `${m.metrics.prose_supported} / ${m.metrics.prose_total}`;
+            const ratio = m.metrics.prose_total > 0 ? (m.metrics.prose_supported / m.metrics.prose_total) * 100 : 100;
+            proseProgress.style.width = `${ratio}%`;
+        }
+
+        if (codeStats && codeProgress) {
+            codeStats.textContent = `${m.metrics.code_total} Block(s)`;
+            const codeRatio = m.metrics.code_total > 0 ? (m.metrics.code_passed / m.metrics.code_total) * 100 : 0;
+            codeProgress.style.width = `${m.metrics.code_total > 0 ? 100 : 0}%`;
+            codeProgress.style.background = m.metrics.code_unsafe > 0 ? "var(--color-red)" : "var(--color-green)";
+        }
+
+        if (credibilityScore && credibilityBadge && credibilityProgress) {
+            credibilityScore.textContent = `${percentage}%`;
+            credibilityBadge.className = `badge ${m.overall_verdict}`;
+            credibilityBadge.textContent = m.overall_verdict;
+            credibilityProgress.style.width = `${percentage}%`;
+            credibilityProgress.style.background = strokeColor;
+        }
+
+        // Count unique reference sources in chunks
+        const uniqueSources = new Set();
+        report.chunks.forEach(c => {
+            if (c.evidence && c.evidence.source) {
+                uniqueSources.add(c.evidence.source);
+            }
+        });
+        if (sourceStats && sourceProgress) {
+            sourceStats.textContent = `${uniqueSources.size} Site(s)`;
+            sourceProgress.style.width = `${uniqueSources.size > 0 ? Math.min(100, uniqueSources.size * 25) : 0}%`;
+        }
         
-        // 3. Render sentence highlights (Prose Factual audit)
+        // 4. Render sentence highlights (Prose Factual audit)
         renderProseHighlights(report.chunks);
         
-        // 4. Render Sandboxed Code Sandboxes Tab
+        // 5. Render Sandboxed Code Sandboxes Tab
         renderCodeSandbox(report.chunks);
         
-        // 5. Render Raw telemetry JSON
+        // 6. Render Raw telemetry JSON
         rawJsonDisplay.textContent = JSON.stringify(report, null, 4);
     }
 

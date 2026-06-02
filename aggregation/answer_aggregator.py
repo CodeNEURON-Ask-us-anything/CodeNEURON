@@ -58,7 +58,7 @@ def aggregate_claim_results(results):
     elif code_total > 0:
         combined_score = round(code_score, 2)
     else:
-        combined_score = 0.0
+        combined_score = 1.0
 
     # 4. Compute Overall Verdict
     if code_unsafe > 0:

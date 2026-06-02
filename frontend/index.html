@@ -16,6 +16,10 @@
     <div class="ambient-glow bg-blue"></div>
     <div class="ambient-glow bg-purple"></div>
 
+    <!-- Custom Neon Circular Cursor Trail -->
+    <div class="custom-cursor"></div>
+    <div class="custom-cursor-dot"></div>
+
     <div class="app-container">
         <!-- Sidebar Navigation & History Logs -->
         <aside class="sidebar glass-panel">
@@ -98,6 +102,53 @@
                     <button id="btn-demo-data" class="btn btn-secondary">Load Demo Example</button>
                 </div>
             </header>
+
+            <!-- Real-time dynamic dashboard status widget cards -->
+            <div class="metrics-grid col-span-12" style="display:grid; grid-template-columns:repeat(4, 1fr); gap:16px; margin-bottom:24px;">
+                <div class="metric-card glass-panel" style="border-radius:12px; padding:18px; text-align:left; border: 1px solid var(--border-color); background: rgba(14,20,38,0.4);">
+                    <small style="color:var(--text-muted); font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:1px; display:block; margin-bottom:6px;">PROSE STATS</small>
+                    <div style="display:flex; justify-content:space-between; align-items:baseline;">
+                        <strong id="widget-prose-stats" style="font-family:'Outfit', sans-serif; font-size:24px; color:#fff;">0 / 0</strong>
+                        <span style="font-size:11px; color:var(--color-blue);">Claims verified</span>
+                    </div>
+                    <div style="height:4px; width:100%; background:rgba(255,255,255,0.05); border-radius:2px; margin-top:10px; overflow:hidden;">
+                        <div id="widget-prose-progress" style="height:100%; width:0%; background:var(--color-blue); transition:width 1s ease-in-out;"></div>
+                    </div>
+                </div>
+
+                <div class="metric-card glass-panel" style="border-radius:12px; padding:18px; text-align:left; border: 1px solid var(--border-color); background: rgba(14,20,38,0.4);">
+                    <small style="color:var(--text-muted); font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:1px; display:block; margin-bottom:6px;">CODE CONSOLE</small>
+                    <div style="display:flex; justify-content:space-between; align-items:baseline;">
+                        <strong id="widget-code-stats" style="font-family:'Outfit', sans-serif; font-size:24px; color:#fff;">0 Blocks</strong>
+                        <span style="font-size:11px; color:var(--color-green);">Sandboxed Exec</span>
+                    </div>
+                    <div style="height:4px; width:100%; background:rgba(255,255,255,0.05); border-radius:2px; margin-top:10px; overflow:hidden;">
+                        <div id="widget-code-progress" style="height:100%; width:0%; background:var(--color-green); transition:width 1s ease-in-out;"></div>
+                    </div>
+                </div>
+
+                <div class="metric-card glass-panel" style="border-radius:12px; padding:18px; text-align:left; border: 1px solid var(--border-color); background: rgba(14,20,38,0.4);">
+                    <small style="color:var(--text-muted); font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:1px; display:block; margin-bottom:6px;">CREDIBILITY RATING</small>
+                    <div style="display:flex; justify-content:space-between; align-items:baseline;">
+                        <strong id="widget-credibility-score" style="font-family:'Outfit', sans-serif; font-size:24px; color:#fff;">100%</strong>
+                        <span id="widget-credibility-badge" class="badge PASS">TRUSTWORTHY</span>
+                    </div>
+                    <div style="height:4px; width:100%; background:rgba(255,255,255,0.05); border-radius:2px; margin-top:10px; overflow:hidden;">
+                        <div id="widget-credibility-progress" style="height:100%; width:100%; background:var(--color-green); transition:width 1.2s ease-in-out, background 0.5s ease;"></div>
+                    </div>
+                </div>
+
+                <div class="metric-card glass-panel" style="border-radius:12px; padding:18px; text-align:left; border: 1px solid var(--border-color); background: rgba(14,20,38,0.4);">
+                    <small style="color:var(--text-muted); font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:1px; display:block; margin-bottom:6px;">WEB SOURCES REFERENCE</small>
+                    <div style="display:flex; justify-content:space-between; align-items:baseline;">
+                        <strong id="widget-source-stats" style="font-family:'Outfit', sans-serif; font-size:24px; color:#fff;">0 Sites</strong>
+                        <span style="font-size:11px; color:var(--color-purple);">Vetted grounds</span>
+                    </div>
+                    <div style="height:4px; width:100%; background:rgba(255,255,255,0.05); border-radius:2px; margin-top:10px; overflow:hidden;">
+                        <div id="widget-source-progress" style="height:100%; width:0%; background:var(--color-purple); transition:width 1s ease-in-out;"></div>
+                    </div>
+                </div>
+            </div>
 
             <section class="grid-layout">
                 <!-- Input Panel -->

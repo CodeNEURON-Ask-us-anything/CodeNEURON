@@ -27,7 +27,7 @@ def chunk_answer(answer_text: str):
         cleaned = sentence.strip()
         # Filter out random punctuation-only lines or too short strings
         cleaned = re.sub(r'\s+', ' ', cleaned) # normalize spaces
-        if len(cleaned) > 5 and not cleaned.startswith("```"):
+        if len(cleaned) >= 3 and not cleaned.startswith("```"):
             chunks.append({
                 "type": "prose",
                 "content": cleaned
