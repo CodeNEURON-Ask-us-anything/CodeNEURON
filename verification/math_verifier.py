@@ -1,6 +1,7 @@
 import ast
 import operator
 import re
+import math
 
 def safe_math_eval(expr):
     ops = {
@@ -12,6 +13,14 @@ def safe_math_eval(expr):
         ast.USub: operator.neg,
         ast.UAdd: operator.pos,
     }
+    
+    math_env = {
+        'sin': math.sin, 'cos': math.cos, 'tan': math.tan,
+        'asin': math.asin, 'acos': math.acos, 'atan': math.atan,
+        'sqrt': math.sqrt, 'log': math.log, 'log10': math.log10,
+        'exp': math.exp, 'pi': math.pi, 'e': math.e,
+        'abs': abs, 'round': round
+    }
 
     def eval_node(node):
         if isinstance(node, ast.Constant):
@@ -20,6 +29,15 @@ def safe_math_eval(expr):
             return ops[type(node.op)](eval_node(node.left), eval_node(node.right))
         elif isinstance(node, ast.UnaryOp):
             return ops[type(node.op)](eval_node(node.operand))
+        elif isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Name) and node.func.id in math_env:
+                args = [eval_node(arg) for arg in node.args]
+                return math_env[node.func.id](*args)
+            raise TypeError(f"Unsupported function: {node.func.id if isinstance(node.func, ast.Name) else 'Unknown'}")
+        elif isinstance(node, ast.Name):
+            if node.id in math_env:
+                return math_env[node.id]
+            raise TypeError(f"Unsupported variable: {node.id}")
         else:
             raise TypeError("Unsupported math operation")
             
@@ -51,7 +69,7 @@ def evaluate_math_claim(claim: str):
     
     # Remove all spaces and common English math words if we just want numbers
     # But ast.parse handles spaces fine. Let's make sure it only has valid characters
-    valid_chars = set("0123456789.+-*/^() ")
+    valid_chars = set("0123456789.+-*/^() abcdefghijklmnopqrstuvwxyz")
     if not all(c in valid_chars for c in left_expr) or not all(c in valid_chars for c in right_expr):
         return None
         
@@ -96,7 +114,7 @@ def evaluate_math_expression(expr: str):
     # Python uses ** for exponentiation
     clean_expr = clean_expr.replace('^', '**')
     
-    valid_chars = set("0123456789.+-*/^() ")
+    valid_chars = set("0123456789.+-*/^() abcdefghijklmnopqrstuvwxyz")
     if not clean_expr or not all(c in valid_chars for c in clean_expr):
         return None
         

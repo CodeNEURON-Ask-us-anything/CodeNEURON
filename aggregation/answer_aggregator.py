@@ -23,9 +23,9 @@ def aggregate_claim_results(results):
         else:
             prose_neutral += 1
 
-    # Factual trust score (SUPPORTED=1.0, NOT_ENOUGH_INFO=0.5, CONTRADICTED=0.0)
+    # Factual trust score: Heavily penalize contradicted claims to ensure best credibility
     if prose_total > 0:
-        prose_score = (prose_supported * 1.0 + prose_neutral * 0.5) / prose_total
+        prose_score = max(0.0, (prose_supported * 1.0 + prose_neutral * 0.4 - prose_contradicted * 1.0) / prose_total)
     else:
         prose_score = 1.0  # default when no prose claims
 
@@ -44,9 +44,9 @@ def aggregate_claim_results(results):
         elif verdict == "UNSAFE":
             code_unsafe += 1
 
-    # Code correctness score (PASS=1.0, FAIL/UNSAFE=0.0)
+    # Code correctness score: penalize failed and unsafe executions
     if code_total > 0:
-        code_score = code_passed / code_total
+        code_score = max(0.0, (code_passed * 1.0 - code_failed * 0.5 - code_unsafe * 1.0) / code_total)
     else:
         code_score = 1.0  # default when no code blocks
 

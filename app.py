@@ -82,11 +82,15 @@ def auto_generate_answer(text: str, mode: str = "nli", api_key: str = None) -> t
     if is_q:
         # If it's a math expression with some text like "what is 2 + 2?", let's clean it and evaluate if possible
         # Check if there is an arithmetic expression inside the question
-        math_match = re.search(r'([\d\.\s\+\-\*\/\^\(\)]+)', clean_text)
+        math_match = re.search(r'([a-zA-Z\d\.\s\+\-\*\/\^\(\)]+)', clean_text)
         if math_match:
             expr = math_match.group(1).strip()
-            # If it contains at least one number and one operator
-            if any(char.isdigit() for char in expr) and any(op in expr for op in "+-*/^"):
+            # If it contains at least one number
+            if any(char.isdigit() for char in expr) or any(func in expr.lower() for func in ['pi', 'e']):
+                # Clean up prefix words to isolate the math expression
+                for prefix in ["what is", "calculate", "solve", "evaluate", "find"]:
+                    if expr.lower().startswith(prefix):
+                        expr = expr[len(prefix):].strip()
                 math_eval = evaluate_math_expression(expr)
                 if math_eval:
                     return f"{text} The answer is: {math_eval['equation']}", True
