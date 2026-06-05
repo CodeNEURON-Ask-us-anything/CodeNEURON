@@ -192,6 +192,7 @@ def verify_answer_endpoint(payload: VerificationRequest):
                 "content": chunk["content"],
                 "verdict": res["verdict"],
                 "confidence": res["confidence"],
+                "credibility_score": res.get("credibility_score", res["confidence"]),
                 "evidence": res["evidence"],
                 "explanation": res.get("explanation", "")
             })

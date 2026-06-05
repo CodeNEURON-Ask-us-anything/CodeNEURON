@@ -5,3 +5,4 @@ sentencepiece
 google-generativeai
 fastapi
 uvicorn
+sympy

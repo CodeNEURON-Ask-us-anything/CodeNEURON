@@ -72,6 +72,7 @@ def verify_fact(claim: str, mode: str = "nli", gemini_api_key: str = None):
             "claim": claim,
             "verdict": "NOT_ENOUGH_INFO",
             "confidence": 0.3,
+            "credibility_score": 0.3,
             "evidence": None,
             "explanation": "No relevant search evidence found to verify this claim."
         }
@@ -85,6 +86,7 @@ def verify_fact(claim: str, mode: str = "nli", gemini_api_key: str = None):
             "claim": claim,
             "verdict": result["verdict"],
             "confidence": result["confidence"],
+            "credibility_score": result["confidence"],
             "evidence": best_ev,
             "explanation": result["explanation"]
         }
@@ -124,6 +126,7 @@ def verify_fact(claim: str, mode: str = "nli", gemini_api_key: str = None):
             "claim": claim,
             "verdict": "NOT_ENOUGH_INFO",
             "confidence": 0.3,
+            "credibility_score": 0.3,
             "evidence": None,
             "explanation": "Retrieved search documents were neutral or lacked alignment to verify this claim."
         }
@@ -155,6 +158,7 @@ def verify_fact(claim: str, mode: str = "nli", gemini_api_key: str = None):
         "claim": claim,
         "verdict": verdict,
         "confidence": final_confidence,
+        "credibility_score": final_confidence,
         "evidence": best["evidence"],
         "explanation": explanation
     }

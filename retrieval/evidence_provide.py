@@ -19,7 +19,9 @@ CERTIFIED_DOMAINS = [
     # Reputable news agencies & fact checkers
     "reuters.com", "apnews.com", "bbc.com", "bbc.co.uk", "nytimes.com",
     "washingtonpost.com", "wsj.com", "bloomberg.com", "economist.com",
-    "snopes.com", "factcheck.org", "politifact.com"
+    "snopes.com", "factcheck.org", "politifact.com",
+    # Q&A and Community (User requested)
+    "quora.com", "reddit.com"
 ]
 
 # Local mock database used as an offline fallback or cache seed
