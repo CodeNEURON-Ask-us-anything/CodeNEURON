@@ -1,0 +1,8 @@
+# dependencies will be added step by step
+transformers
+torch
+sentencepiece
+google-generativeai
+fastapi
+uvicorn
+sympy
