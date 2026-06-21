@@ -2,13 +2,12 @@
 
 document.addEventListener("DOMContentLoaded", () => {
     // ---- DOM Element Selectors ----
-    const aiInput = document.getElementById("ai-answer-input");
-    const modeSelect = document.getElementById("verification-mode");
-    const apiKeyGroup = document.getElementById("api-key-group");
-    const apiKeyInput = document.getElementById("gemini-api-key");
-    const sourceModelInput = document.getElementById("source-model");
+    const aiInputProse = document.getElementById("ai-input-prose");
+    const aiInputCode = document.getElementById("ai-input-code");
+    const aiInputVerify = document.getElementById("ai-input-verify");
+    let currentInputMode = "prose";
     
-    const btnVerify = document.getElementById("btn-verify");
+    const btnVerify = document.getElementById("btn-submit");
     const btnClear = document.getElementById("btn-clear");
     const btnDemo = document.getElementById("btn-demo-data");
     const btnExport = document.getElementById("btn-export-pdf");
@@ -119,25 +118,18 @@ open("hacked.txt", "w").write("test")
 
     // ---- Event Listeners ----
     
-    // Toggle API Key Input Visibility based on mode selected
-    modeSelect.addEventListener("change", () => {
-        if (modeSelect.value === "gemini") {
-            apiKeyGroup.classList.remove("hidden");
-        } else {
-            apiKeyGroup.classList.add("hidden");
-        }
-    });
-    
     // Clear Input
     btnClear.addEventListener("click", () => {
-        aiInput.value = "";
+        aiInputProse.value = "";
+        aiInputCode.value = "";
+        aiInputVerify.value = "";
         resetVerificationStates();
     });
     
     // Load Demo Data
     btnDemo.addEventListener("click", () => {
-        aiInput.value = DEMO_EXAMPLE;
-        sourceModelInput.value = "ChatGPT-4o";
+        aiInputVerify.value = DEMO_EXAMPLE;
+        document.getElementById("tab-verify").click();
     });
     
     // Export PDF Report
@@ -184,26 +176,25 @@ open("hacked.txt", "w").write("test")
     setupCopyButton("btn-copy-code", "#code-source-display", true);
     setupCopyButton("btn-copy-json", "#raw-json-display", true);
 
-    // Direct Question Mode toggle handling
-    const toggleVerifyMode = document.getElementById("toggle-verify-mode");
-    const toggleAskMode = document.getElementById("toggle-ask-mode");
-    const inputTitle = document.getElementById("input-title");
-    let isDirectQuestionMode = false;
+    // Input Tab switching routing
+    const inputTabs = [
+        { btn: document.getElementById("tab-prose"), area: aiInputProse, mode: "prose" },
+        { btn: document.getElementById("tab-code"), area: aiInputCode, mode: "code" },
+        { btn: document.getElementById("tab-verify"), area: aiInputVerify, mode: "verify" }
+    ];
 
-    toggleVerifyMode.addEventListener("click", () => {
-        toggleVerifyMode.classList.add("active");
-        toggleAskMode.classList.remove("active");
-        inputTitle.textContent = "Raw AI Output Input";
-        aiInput.placeholder = "Paste the AI-generated answer here, mixing prose explanations and python code blocks (in ```python...``` blocks)...";
-        isDirectQuestionMode = false;
-    });
-
-    toggleAskMode.addEventListener("click", () => {
-        toggleAskMode.classList.add("active");
-        toggleVerifyMode.classList.remove("active");
-        inputTitle.textContent = "Ask a Direct Question / Prompt";
-        aiInput.placeholder = "Enter any question or prompt (e.g. 'Explain photosynthesis' or 'Write a bubble sort function'). CodeNeuron will generate the response and verify it automatically...";
-        isDirectQuestionMode = true;
+    inputTabs.forEach(tab => {
+        tab.btn.addEventListener("click", () => {
+            // Remove active/hidden
+            inputTabs.forEach(t => {
+                t.btn.classList.remove("active");
+                t.area.classList.add("hidden");
+            });
+            // Set active
+            tab.btn.classList.add("active");
+            tab.area.classList.remove("hidden");
+            currentInputMode = tab.mode;
+        });
     });
 
     // Real-time History Filtering
@@ -279,6 +270,8 @@ open("hacked.txt", "w").write("test")
             const item = document.createElement("div");
             item.className = `history-item ${currentReport && currentReport.id === entry.id ? 'active' : ''}`;
             
+            const titleText = entry.original_prompt ? entry.original_prompt : "Verified Output";
+        
             item.innerHTML = `
                 <div class="history-header">
                     <span>${timeStr}</span>
@@ -288,6 +281,9 @@ open("hacked.txt", "w").write("test")
                 <div class="history-score-row">
                     <span class="badge ${badgeClass}">${entry.metrics.overall_verdict}</span>
                     <span style="font-weight:600; font-size:12px;">${entry.metrics.score_percentage}%</span>
+                </div>
+                <div style="font-size: 11px; margin-top: 4px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                    ${titleText}
                 </div>
             `;
             
@@ -304,7 +300,10 @@ open("hacked.txt", "w").write("test")
     }
 
     async function triggerAnalysis() {
-        const text = aiInput.value ? aiInput.value.trim() : "";
+        let text = "";
+        if (currentInputMode === "prose") text = aiInputProse.value.trim();
+        else if (currentInputMode === "code") text = aiInputCode.value.trim();
+        else if (currentInputMode === "verify") text = aiInputVerify.value.trim();
         if (!text) {
             alert("Please paste an AI answer to verify.");
             return;
@@ -319,9 +318,9 @@ open("hacked.txt", "w").write("test")
         
         const payload = {
             answer: text,
-            source_model: sourceModelInput.value || "Unknown",
-            mode: modeSelect.value,
-            gemini_api_key: apiKeyInput.value || ""
+            source_model: "DirectInput",
+            mode: "gemini",
+            gemini_api_key: ""
         };
         
         // Pipeline transitions timing simulator to match REST steps
@@ -422,10 +421,21 @@ open("hacked.txt", "w").write("test")
         // 2. Render report assessments text
         reportTitle.textContent = m.summary;
         let reportTextContent = `Analysis conducted via CodeNeuron ${report.mode_selected.toUpperCase()} engine. Source LLM: ${report.source_model}.`;
+        
+        // Render the generated answer properly
+        const genAnsSection = document.getElementById("generated-answer-section");
+        const genAnsContent = document.getElementById("generated-answer-content");
         if (report.generated_answer) {
-            reportTextContent = `Generated Answer: "${report.generated_answer}"\n\n` + reportTextContent;
-            aiInput.value = report.generated_answer;
+            genAnsSection.style.display = "block";
+            // Use marked.js to render Markdown
+            genAnsContent.innerHTML = marked.parse(report.generated_answer);
+            if (window.MathJax) {
+                MathJax.typesetPromise([genAnsContent]).catch(err => console.log('MathJax error: ', err));
+            }
+        } else {
+            genAnsSection.style.display = "none";
         }
+
         reportText.textContent = reportTextContent;
         reportBreakdown.textContent = m.breakdown;
         
@@ -485,6 +495,11 @@ open("hacked.txt", "w").write("test")
         
         // 6. Render Raw telemetry JSON
         rawJsonDisplay.textContent = JSON.stringify(report, null, 4);
+
+        // Typeset all math in the prose highlighted text container
+        if (window.MathJax) {
+            MathJax.typesetPromise([proseHighlightedText]).catch(err => console.log('MathJax error: ', err));
+        }
     }
 
     function renderProseHighlights(chunks) {
@@ -502,7 +517,7 @@ open("hacked.txt", "w").write("test")
                 proseFound = true;
                 const span = document.createElement("span");
                 span.className = `claim-highlighter ${c.verdict}`;
-                span.textContent = c.content + " ";
+                span.innerHTML = c.content + " ";
                 span.setAttribute("data-index", idx);
                 
                 span.addEventListener("click", () => {
@@ -548,13 +563,20 @@ open("hacked.txt", "w").write("test")
             document.getElementById("evidence-relevance-pill").textContent = `Assessment Confidence: ${relevancePercentage}%`;
             
             const sourceUrl = document.getElementById("evidence-source-url");
-            sourceUrl.href = ev.source;
-            sourceUrl.textContent = ev.source.startsWith("http") ? new URL(ev.source).hostname : "Wikipedia Documentation Link";
+            sourceUrl.href = claimChunk.source_link || ev.source;
+            sourceUrl.textContent = "View Exact Source Page \u2192";
             sourceUrl.classList.remove("hidden");
+            
+            if (document.getElementById("evidence-exact-quote")) {
+                document.getElementById("evidence-exact-quote").textContent = claimChunk.exact_quote || ev.text;
+            }
         } else {
             document.getElementById("evidence-source-text").textContent = "No external documents retrieved containing aligned claims.";
             document.getElementById("evidence-relevance-pill").textContent = "Assessment Confidence: 30%";
             document.getElementById("evidence-source-url").classList.add("hidden");
+            if (document.getElementById("evidence-exact-quote")) {
+                document.getElementById("evidence-exact-quote").textContent = "N/A";
+            }
         }
     }
 
@@ -611,6 +633,10 @@ open("hacked.txt", "w").write("test")
         document.getElementById("metric-lints").textContent = `${sa.lint_errors || 0} Alert(s)`;
         document.getElementById("metric-time").textContent = tr.time || "0.00s";
         document.getElementById("metric-security").textContent = `${sa.security_issues || 0} Alert(s)`;
+        if (document.getElementById("metric-time-complex")) {
+            document.getElementById("metric-time-complex").textContent = codeChunk.time_complexity || "N/A";
+            document.getElementById("metric-space-complex").textContent = codeChunk.space_complexity || "N/A";
+        }
         
         // 2. Render code display
         document.getElementById("code-source-display").textContent = codeChunk.code;
@@ -684,5 +710,10 @@ open("hacked.txt", "w").write("test")
         
         // 6. Render generated test suite code
         document.getElementById("code-test-source-display").textContent = codeChunk.test_source || "# Test script generated successfully.";
+        
+        // 7. Render optimized code
+        if (document.getElementById("code-optimized-display")) {
+            document.getElementById("code-optimized-display").textContent = codeChunk.optimized_solution || "N/A";
+        }
     }
 });

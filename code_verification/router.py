@@ -1,6 +1,7 @@
 from code_verification.analysis.static_checker import static_check
 from code_verification.testing.test_generator import generate_tests, run_tests
 from code_verification.verdict import generate_code_verdict
+from code_verification.analysis.complexity_analyzer import analyze_code_complexity
 
 def is_code_chunk(chunk: dict) -> bool:
     return chunk.get("type") == "code"
@@ -25,10 +26,10 @@ def verify_code_chunk(chunk: dict, use_gemini: bool = False, api_key: str = None
     static_results = static_check(code_text)
     
     # 2. Compile tests (either Gemini LLM generated or static AST fallback)
-    generated_test_code = generate_tests(code_text, use_gemini, api_key)
+    generated_test_code = generate_tests(code_text, use_gemini, api_key, language)
     
     # 3. Securely execute target code combined with test code inside sandbox
-    test_run_results = run_tests(code_text, generated_test_code)
+    test_run_results = run_tests(code_text, generated_test_code, language)
     
     # 4. Generate unified code assessment status (PASS, FAIL, UNSAFE)
     # Replicate fake runner results payload mapping to execute verdict
@@ -44,6 +45,9 @@ def verify_code_chunk(chunk: dict, use_gemini: bool = False, api_key: str = None
         static_result={"security_issues": static_results.get("security_issues", 0)}
     )
     
+    # 5. Analyze complexity and get optimized solution if Gemini is enabled
+    complexity_info = analyze_code_complexity(code_text, api_key) if use_gemini else {}
+    
     return {
         "type": "code",
         "language": language,
@@ -51,5 +55,8 @@ def verify_code_chunk(chunk: dict, use_gemini: bool = False, api_key: str = None
         "verdict": verdict,
         "static_analysis": static_results,
         "test_results": test_run_results,
-        "test_source": generated_test_code
+        "test_source": generated_test_code,
+        "time_complexity": complexity_info.get("time_complexity", "N/A"),
+        "space_complexity": complexity_info.get("space_complexity", "N/A"),
+        "optimized_solution": complexity_info.get("optimized_solution", "N/A")
     }

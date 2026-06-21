@@ -51,37 +51,62 @@ def run_code(code: str, language: str = "python"):
 
     lang = (language or "python").strip().lower()
     
-    # Secure Local execution is supported for Python
-    if lang != "python":
+    # Supported languages
+    supported_langs = ["python", "c", "cpp", "java"]
+    if lang not in supported_langs:
         return {
             "stdout": "",
-            "stderr": f"CodeNeuron local sandbox execution only supports Python. Selected language '{lang}' was bypassed.",
-            "exit_code": 0,
+            "stderr": f"CodeNeuron local sandbox does not support '{lang}'. Supported: {', '.join(supported_langs)}.",
+            "exit_code": -1,
             "time": "0.00s",
             "memory": "0MB"
         }
 
-    # Inject sandbox safety protections and write code to temporary file
-    sandboxed_code = SANDBOX_SECURITY_HEADER + "\n" + code
-    
-    temp_file = None
+    temp_file_path = None
+    exec_file_path = None
     try:
-        # Create a secure temporary file
-        fd, temp_file_path = tempfile.mkstemp(suffix=".py", text=True)
-        with os.fdopen(fd, 'w', encoding='utf-8') as f:
-            f.write(sandboxed_code)
-        
-        # Measure CPU execution time
         start_time = time.perf_counter()
         
-        # Execute the python process in sandbox
-        result = subprocess.run(
-            [sys.executable, temp_file_path],
-            capture_output=True,
-            text=True,
-            timeout=5.0  # Strict 5.0 second maximum CPU execution limit
-        )
-        
+        if lang == "python":
+            sandboxed_code = SANDBOX_SECURITY_HEADER + "\n" + code
+            fd, temp_file_path = tempfile.mkstemp(suffix=".py", text=True)
+            with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                f.write(sandboxed_code)
+            
+            result = subprocess.run([sys.executable, temp_file_path], capture_output=True, text=True, timeout=5.0)
+            
+        elif lang == "c":
+            fd, temp_file_path = tempfile.mkstemp(suffix=".c", text=True)
+            with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                f.write(code)
+            exec_file_path = temp_file_path[:-2] + ".exe" if os.name == 'nt' else temp_file_path[:-2] + ".out"
+            
+            compile_res = subprocess.run(["gcc", temp_file_path, "-o", exec_file_path], capture_output=True, text=True, timeout=5.0)
+            if compile_res.returncode != 0:
+                return {"stdout": "", "stderr": compile_res.stderr, "exit_code": compile_res.returncode, "time": "0.00s", "memory": "0MB"}
+                
+            result = subprocess.run([exec_file_path], capture_output=True, text=True, timeout=5.0)
+            
+        elif lang == "cpp":
+            fd, temp_file_path = tempfile.mkstemp(suffix=".cpp", text=True)
+            with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                f.write(code)
+            exec_file_path = temp_file_path[:-4] + ".exe" if os.name == 'nt' else temp_file_path[:-4] + ".out"
+            
+            compile_res = subprocess.run(["g++", temp_file_path, "-o", exec_file_path], capture_output=True, text=True, timeout=5.0)
+            if compile_res.returncode != 0:
+                return {"stdout": "", "stderr": compile_res.stderr, "exit_code": compile_res.returncode, "time": "0.00s", "memory": "0MB"}
+                
+            result = subprocess.run([exec_file_path], capture_output=True, text=True, timeout=5.0)
+            
+        elif lang == "java":
+            fd, temp_file_path = tempfile.mkstemp(suffix=".java", text=True)
+            with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                f.write(code)
+            
+            # Use 'java file.java' which works directly in Java 11+ without explicit javac
+            result = subprocess.run(["java", temp_file_path], capture_output=True, text=True, timeout=5.0)
+            
         execution_time = time.perf_counter() - start_time
         
         return {
@@ -89,7 +114,7 @@ def run_code(code: str, language: str = "python"):
             "stderr": result.stderr,
             "exit_code": result.returncode,
             "time": f"{execution_time:.3f}s",
-            "memory": "14MB"  # Approximation of standard python subprocess baseline
+            "memory": "14MB"
         }
         
     except subprocess.TimeoutExpired:
@@ -99,6 +124,15 @@ def run_code(code: str, language: str = "python"):
             "exit_code": -2,
             "time": "5.00s",
             "memory": "16MB"
+        }
+    except FileNotFoundError as e:
+        compiler = str(e).split()[-1]
+        return {
+            "stdout": "",
+            "stderr": f"Sandbox configuration error: Compiler or interpreter not found. Please install the necessary tools to execute {lang} code.",
+            "exit_code": -3,
+            "time": "0.00s",
+            "memory": "0MB"
         }
     except Exception as e:
         return {
@@ -111,8 +145,9 @@ def run_code(code: str, language: str = "python"):
     finally:
         # Guarantee cleanup of temporary files
         if temp_file_path and os.path.exists(temp_file_path):
-            try:
-                os.remove(temp_file_path)
-            except Exception:
-                pass
+            try: os.remove(temp_file_path)
+            except Exception: pass
+        if exec_file_path and os.path.exists(exec_file_path):
+            try: os.remove(exec_file_path)
+            except Exception: pass
 

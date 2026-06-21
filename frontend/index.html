@@ -7,18 +7,15 @@
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;600&family=Inter:wght@400;500;600&family=Outfit:wght@400;600;800&display=swap" rel="stylesheet">
-    <!-- Main Style Stylesheet -->
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&family=Inter:wght@400;500;600&family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="index.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
 <body>
     <!-- Background Animated Glow Nodes -->
     <div class="ambient-glow bg-blue"></div>
     <div class="ambient-glow bg-purple"></div>
 
-    <!-- Custom Neon Circular Cursor Trail -->
-    <div class="custom-cursor"></div>
-    <div class="custom-cursor-dot"></div>
 
     <div class="app-container">
         <!-- Sidebar Navigation & History Logs -->
@@ -31,26 +28,6 @@
                 <h2>CodeNeuron</h2>
             </div>
             
-            <div class="sidebar-section">
-                <h3>Verification Settings</h3>
-                <div class="form-group">
-                    <label for="verification-mode">Engine Model</label>
-                    <select id="verification-mode" class="input-control">
-                        <option value="nli">Local NLI (bart-large-mnli)</option>
-                        <option value="gemini" selected>Grounded Gemini 1.5 Flash</option>
-                    </select>
-                </div>
-                
-                <div class="form-group" id="api-key-group">
-                    <label for="gemini-api-key">Gemini API Key</label>
-                    <input type="password" id="gemini-api-key" class="input-control" placeholder="Using default template key..." autocomplete="new-password">
-                </div>
-
-                <div class="form-group">
-                    <label for="source-model">Source LLM</label>
-                    <input type="text" id="source-model" class="input-control" value="ChatGPT" placeholder="e.g. Claude 3.5, ChatGPT">
-                </div>
-            </div>
 
             <div class="sidebar-section">
                 <h3>Analysis History</h3>
@@ -63,26 +40,7 @@
                 <button id="btn-clear-history" class="btn btn-secondary" style="width:100%; margin-top:10px; padding:6px 12px; font-size:11px;">Clear History</button>
             </div>
 
-            <div class="sidebar-section">
-                <h3>Engine Configuration</h3>
-                <div class="engine-config-card" style="background:rgba(255,255,255,0.02); border:1px solid var(--border-color); border-radius:8px; padding:12px;">
-                    <div style="display:flex; justify-content:space-between; margin-bottom:6px; font-size:11px; color:var(--text-secondary);">
-                        <span>Status:</span>
-                        <span style="color:var(--color-green); font-weight:600; display:inline-flex; align-items:center; gap:4px;">
-                            <span style="width:6px; height:6px; background-color:var(--color-green); border-radius:50%; display:inline-block; box-shadow:0 0 6px var(--color-green)"></span>
-                            ACTIVE
-                        </span>
-                    </div>
-                    <div style="display:flex; justify-content:space-between; margin-bottom:6px; font-size:11px; color:var(--text-secondary);">
-                        <span>Search Retriever:</span>
-                        <span style="color:var(--color-blue); font-weight:600;">DDG + Wiki</span>
-                    </div>
-                    <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--text-secondary);">
-                        <span>Model:</span>
-                        <span style="color:var(--color-purple); font-weight:600;">gemini-2.5-flash</span>
-                    </div>
-                </div>
-            </div>
+
 
             <div class="sidebar-footer">
                 <p>CodeNeuron v1.2.0</p>
@@ -156,15 +114,19 @@
                     <div class="card-header">
                         <h3 id="input-title">Raw AI Output Input</h3>
                         <div style="display:flex; gap:8px;">
-                            <button id="toggle-verify-mode" class="btn btn-secondary active" style="padding:4px 10px; font-size:11px; border-radius:4px;">Verify AI Output</button>
-                            <button id="toggle-ask-mode" class="btn btn-secondary" style="padding:4px 10px; font-size:11px; border-radius:4px;">Ask Direct Question</button>
+                            <button id="tab-prose" class="btn btn-secondary active" style="padding:4px 10px; font-size:11px; border-radius:4px;">Ask Prose</button>
+                            <button id="tab-code" class="btn btn-secondary" style="padding:4px 10px; font-size:11px; border-radius:4px;">Ask Code</button>
+                            <button id="tab-verify" class="btn btn-secondary" style="padding:4px 10px; font-size:11px; border-radius:4px;">Verify Output</button>
                         </div>
                     </div>
                     <div class="card-body">
-                        <textarea id="ai-answer-input" class="textarea-control" placeholder="Paste the AI-generated answer here, mixing prose explanations and python code blocks (in ```python...``` blocks)..."></textarea>
+                        <textarea id="ai-input-prose" class="textarea-control" placeholder="Ask a direct factual or mathematical question..."></textarea>
+                        <textarea id="ai-input-code" class="textarea-control hidden" placeholder="Write or paste your code to execute and analyze..."></textarea>
+                        <textarea id="ai-input-verify" class="textarea-control hidden" placeholder="Paste an AI-generated answer here for verification..."></textarea>
+                        
                         <div class="action-bar">
                             <button id="btn-clear" class="btn btn-secondary">Clear</button>
-                            <button id="btn-verify" class="btn btn-primary">Analyze & Verify</button>
+                            <button id="btn-submit" class="btn btn-primary">Analyze & Verify</button>
                         </div>
                     </div>
                 </div>
@@ -222,11 +184,16 @@
                                     <small>Trust Score</small>
                                 </div>
                             </div>
-                            <div class="score-details">
-                                <h4 id="report-summary-title">Awaiting Assessment</h4>
-                                <p id="report-summary-text">Submit an answer above to trigger verification.</p>
-                                <div class="breakdown-pill" id="report-breakdown">Supported/Contradicted counts</div>
+                            <div class="score-details" style="width: 100%;">
+                                <h4 id="report-summary-title" style="margin-bottom:8px; font-size:16px;">Assessment Report</h4>
+                                <p id="report-summary-text" class="text-muted" style="margin-bottom:12px;">Run an analysis to generate an assessment report.</p>
+                                <div class="badge-group" id="stats-badges"></div>
+                                <div id="report-breakdown" class="hidden"></div>
                             </div>
+                        </div>
+                        <div id="generated-answer-section" style="margin-top: 20px; padding-top: 15px; border-top: 1px solid var(--border-color); display: none;">
+                            <h4 style="color: var(--color-blue); margin-bottom: 10px;">Generated Answer / Verified Result</h4>
+                            <div id="generated-answer-content" style="padding: 15px; background: rgba(0,0,0,0.3); border-radius: 8px; font-family: 'Inter', sans-serif; line-height: 1.6; color: #e2e8f0; font-size: 14px; white-space: pre-wrap; max-height: 300px; overflow-y: auto;"></div>
                         </div>
                     </div>
                 </div>
@@ -273,6 +240,7 @@
                                             <label>Evidence Document Source</label>
                                             <div class="evidence-card">
                                                 <p id="evidence-source-text"></p>
+                                                <p style="margin-top:8px; font-size:12px;"><b>Exact Match Quote:</b> <span id="evidence-exact-quote" style="color:var(--color-green);"></span></p>
                                                 <div class="evidence-metadata">
                                                     <span id="evidence-relevance-pill">Match Relevance: 0%</span>
                                                     <a id="evidence-source-url" href="#" target="_blank">View Wikipedia Article &rarr;</a>
@@ -325,6 +293,14 @@
                                                 <small>Security Audit</small>
                                                 <strong id="metric-security">0 Issues</strong>
                                             </div>
+                                            <div class="metric-card">
+                                                <small>Time Complexity</small>
+                                                <strong id="metric-time-complex" style="color:var(--color-purple)">O(N)</strong>
+                                            </div>
+                                            <div class="metric-card">
+                                                <small>Space Complexity</small>
+                                                <strong id="metric-space-complex" style="color:var(--color-blue)">O(1)</strong>
+                                            </div>
                                         </div>
 
                                         <div class="code-section-group">
@@ -355,6 +331,11 @@
                                         <div class="code-section-group">
                                             <div class="section-label">Generated Test Assertions Script</div>
                                             <pre class="code-block-container"><code id="code-test-source-display"></code></pre>
+                                        </div>
+                                        
+                                        <div class="code-section-group">
+                                            <div class="section-label" style="color:var(--color-purple)">Optimized Solution (AI Suggested)</div>
+                                            <pre class="code-block-container" style="border:1px solid var(--color-purple)"><code id="code-optimized-display"></code></pre>
                                         </div>
                                     </div>
                                 </div>

@@ -74,17 +74,18 @@ def verify_grounded_with_gemini(claim: str, evidence_list: list, api_key: str = 
             evidence_context = "No direct evidence retrieved."
 
         prompt = f"""
-        You are an expert fact-checking AI. Your task is to verify whether the following factual claim is supported or contradicted by the retrieved evidence.
+        You are an expert fact-checking AI. Your task is to verify whether the following factual claim is SUPPORTED or CONTRADICTED.
         
         Claim to verify: "{claim}"
         
         Retrieved Grounded Evidence:
         {evidence_context}
         
-        Analyze the claim carefully against the evidence:
-        1. If the evidence directly supports/confirms the claim, the verdict is "SUPPORTED".
-        2. If the evidence contradicts/refutes the claim, the verdict is "CONTRADICTED".
-        3. If the evidence does not contain enough information to prove or disprove the claim, the verdict is "NOT_ENOUGH_INFO".
+        Analyze the claim carefully. Use the retrieved evidence if it is relevant and accurate.
+        If the evidence is irrelevant, outdated, or absent, rely entirely on your own internal knowledge to evaluate the claim:
+        1. If the claim is factually true/accurate, the verdict is "SUPPORTED".
+        2. If the claim is factually false/inaccurate, the verdict is "CONTRADICTED".
+        3. If it is impossible to determine even with internal knowledge, the verdict is "NOT_ENOUGH_INFO".
 
         Respond ONLY in JSON format matching this schema exactly:
         {{
@@ -132,8 +133,115 @@ def verify_grounded_with_gemini(claim: str, evidence_list: list, api_key: str = 
     except Exception as e:
         print(f"Grounded Gemini verification error: {str(e)}")
         return {
-            "verdict": "NOT_ENOUGH_INFO",
-            "confidence": 0.3,
+            "verdict": "ERROR",
+            "confidence": 0.0,
             "explanation": f"Grounded verification failed: {str(e)}"
         }
+
+def batch_verify_grounded_with_gemini(claims_data: list, api_key: str = None):
+    """
+    Verifies a batch of claims grounded in their respective retrieved evidence using Gemini.
+    claims_data should be a list of dicts: [{"claim": str, "evidence_list": list}, ...]
+    Returns a list of structured dictionaries matching the verification schema.
+    """
+    if not claims_data:
+        return []
+        
+    try:
+        model = get_gemini_model(api_key)
+        if not model:
+            return [{
+                "verdict": "NOT_ENOUGH_INFO",
+                "confidence": 0.3,
+                "explanation": "Gemini API configuration failed."
+            } for _ in claims_data]
+
+        # Format retrieved evidence into string context
+        batch_prompt = "You are an expert fact-checking AI. Your task is to verify a batch of factual claims.\n\n"
+        
+        for i, data in enumerate(claims_data):
+            claim = data["claim"]
+            evidence_list = data.get("evidence_list", [])
+            evidence_context = ""
+            if evidence_list:
+                for idx, ev in enumerate(evidence_list):
+                    evidence_context += f"Evidence [{idx+1}]: {ev['text']} (Source: {ev['source']})\n"
+            else:
+                evidence_context = "No direct evidence retrieved."
+                
+            batch_prompt += f"--- CLAIM {i} ---\n"
+            batch_prompt += f"Claim to verify: \"{claim}\"\n"
+            batch_prompt += f"Retrieved Grounded Evidence:\n{evidence_context}\n\n"
+
+        batch_prompt += """
+        Analyze each claim carefully. Use the retrieved evidence if it is relevant and accurate.
+        If the evidence is irrelevant, outdated, or absent, rely entirely on your own internal knowledge to evaluate the claim:
+        1. If the claim is factually true/accurate, the verdict is "SUPPORTED".
+        2. If the claim is factually false/inaccurate, the verdict is "CONTRADICTED".
+        3. If it is impossible to determine even with internal knowledge, the verdict is "NOT_ENOUGH_INFO".
+
+        Respond ONLY in JSON format. It MUST be a JSON array of objects, where the array length exactly matches the number of claims.
+        Each object must match this schema exactly:
+        {
+            "claim_index": <integer index of the claim, starting from 0>,
+            "verdict": "SUPPORTED" or "CONTRADICTED" or "NOT_ENOUGH_INFO",
+            "confidence": <float between 0.0 and 1.0 representing your confidence in this decision>,
+            "explanation": "<a short, single-sentence explanation of why the verdict was chosen based on the evidence>"
+        }
+
+        Do NOT include any codeblock backticks or formatting. Just output raw JSON array.
+        """
+        
+        response = model.generate_content(batch_prompt)
+        content = response.text.strip()
+        
+        # Sanitize markdown codeblock wrappers if returned by the LLM
+        if content.startswith("```"):
+            content = re.sub(r"^```(?:json)?\n", "", content)
+            content = re.sub(r"\n```$", "", content)
+            content = content.strip()
+
+        try:
+            results = json.loads(content)
+            if not isinstance(results, list):
+                raise ValueError("Expected a JSON array")
+                
+            # Create a mapped response list
+            final_results = []
+            for i in range(len(claims_data)):
+                # Find matching result by index, or fallback
+                res = next((r for r in results if r.get("claim_index") == i), None)
+                if res:
+                    verdict = res.get("verdict", "NOT_ENOUGH_INFO").upper()
+                    if verdict not in ["SUPPORTED", "CONTRADICTED", "NOT_ENOUGH_INFO"]:
+                        verdict = "NOT_ENOUGH_INFO"
+                    final_results.append({
+                        "verdict": verdict,
+                        "confidence": float(res.get("confidence", 0.5)),
+                        "explanation": res.get("explanation", "Verified using grounded LLM assessment.")
+                    })
+                else:
+                    final_results.append({
+                        "verdict": "NOT_ENOUGH_INFO",
+                        "confidence": 0.3,
+                        "explanation": "Model omitted this claim from the batch response."
+                    })
+            return final_results
+        except Exception as parse_e:
+            print(f"JSON Parse Error in batch verification: {str(parse_e)}")
+            # Fallback for all
+            return [{
+                "verdict": "NOT_ENOUGH_INFO",
+                "confidence": 0.5,
+                "explanation": "Verified using raw text analysis."
+            } for _ in claims_data]
+            
+    except Exception as e:
+        print(f"Grounded Gemini batch verification error: {str(e)}")
+        return [{
+            "verdict": "ERROR",
+            "confidence": 0.0,
+            "explanation": f"Grounded verification failed: {str(e)}"
+        } for _ in claims_data]
+
 

@@ -3,12 +3,12 @@ import re
 from code_verification.sandbox.judge0_runner import run_code
 from verification.gemini_verifier import get_gemini_model
 
-def generate_tests(code: str, use_gemini: bool = False, api_key: str = None):
+def generate_tests(code: str, use_gemini: bool = False, api_key: str = None, language: str = "python"):
     """
     Generates unit tests (python assertion statements) for a code block.
     Uses Gemini 1.5 Flash if requested, or falls back to AST-based signature parsing.
     """
-    if not code or not code.strip():
+    if not code or not code.strip() or language != "python":
         return ""
 
     if use_gemini:
@@ -71,7 +71,7 @@ except Exception as e:
     return "\n".join(test_cases)
 
 
-def run_tests(code: str, test_code: str):
+def run_tests(code: str, test_code: str, language: str = "python"):
     """
     Executes the combined user code and generated test code inside the secure sandbox.
     Parses stdout indicators to calculate passed and failed test cases.
@@ -82,7 +82,7 @@ def run_tests(code: str, test_code: str):
     combined_code = code + "\n\n" + (test_code or "")
     
     # Run in subprocess sandbox
-    run_result = run_code(combined_code, "python")
+    run_result = run_code(combined_code, language)
     
     stdout = run_result.get("stdout", "")
     stderr = run_result.get("stderr", "")
