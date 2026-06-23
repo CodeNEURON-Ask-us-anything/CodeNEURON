@@ -166,6 +166,7 @@ body {
     padding: 10px 12px;
     font-size: 13px;
     color: var(--text-primary);
+    caret-color: var(--text-primary);
     outline: none;
     transition: all 0.3s ease;
 }
@@ -414,6 +415,7 @@ select.input-control {
     font-family: 'Fira Code', 'Courier New', monospace;
     font-size: 13px;
     color: var(--text-primary);
+    caret-color: var(--text-primary);
     outline: none;
     resize: none;
     transition: all 0.3s ease;

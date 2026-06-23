@@ -51,7 +51,7 @@ MOCK_EVIDENCE_DB = [
     }
 ]
 
-from ddgs import DDGS
+from duckduckgo_search import DDGS
 
 
 def get_domain_score(url: str) -> int:

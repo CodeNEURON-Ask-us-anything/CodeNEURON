@@ -29,11 +29,8 @@ class VerificationRequest(BaseModel):
     source_model: str = "Unknown"
     mode: str = "nli"  # "nli" or "gemini"
     gemini_api_key: str = None
-<<<<<<< HEAD
-    skip_generation: bool = False
-=======
     input_type: str = "verify"
->>>>>>> 67773fe25377fbb84aa125560606f2832d34d223
+    skip_generation: bool = False
 
 # Legacy Request Schema
 class AnswerInput(BaseModel):
@@ -95,14 +92,8 @@ def auto_generate_answer(text: str, mode: str = "nli", api_key: str = None, forc
         clean_text.lower().startswith(prompt_verbs)
     )
     
-<<<<<<< HEAD
-    if is_q:
-        # If the user is making a claim (contains '='), don't treat it as a question
-=======
     if is_q or force_generate:
-        # If it's a math expression with some text like "what is 2 + 2?", let's clean it and evaluate if possible
-        # If the user is making a claim (contains '='), don't treat it as a math question to answer
->>>>>>> 67773fe25377fbb84aa125560606f2832d34d223
+        # If the user is making a claim (contains '='), don't treat it as a question
         if '=' in clean_text:
             return text, False
 
@@ -150,16 +141,6 @@ def auto_generate_answer(text: str, mode: str = "nli", api_key: str = None, forc
         except Exception as e:
             print(f"Gemini answer generation fallback triggered due to error: {str(e)}")
 
-<<<<<<< HEAD
-        # Generic fallback: use the best web search evidence as the answer
-        if evidence_list:
-            # Combine top evidence snippets into a coherent answer
-            if len(evidence_list) >= 2:
-                combined = "\n".join([f"• {ev['text']} (Source: {ev['source']})" for ev in evidence_list[:3]])
-                return f"Based on web search results:\n{combined}", True
-            else:
-                return f"Search result: {evidence_list[0]['text']} (Source: {evidence_list[0]['source']})", True
-=======
         # Local fallback for questions using search if Gemini is not configured or fails
         q_lower = clean_text.lower()
         if "capital" in q_lower and "india" in q_lower:
@@ -176,13 +157,10 @@ def auto_generate_answer(text: str, mode: str = "nli", api_key: str = None, forc
         
         structured_fallback += "**Note:** *The generative engine (Gemini) could not be reached, so this is a structured fallback response. Ensure your API connectivity is valid.*\n"
         
-        if force_generate and "code" in q_lower or "function" in q_lower or "sort" in q_lower or "implement" in q_lower:
+        if force_generate and ("code" in q_lower or "function" in q_lower or "sort" in q_lower or "implement" in q_lower):
             structured_fallback += "\nHere is a functional boilerplate template for your request:\n```python\ndef generated_function():\n    # Implement your logic here\n    pass\n```\n"
->>>>>>> 67773fe25377fbb84aa125560606f2832d34d223
 
         return structured_fallback, True
-        
-    return text, False
         
     return text, False
 
@@ -194,29 +172,20 @@ def verify_answer_endpoint(payload: VerificationRequest):
     Performs ingestion, splits text into prose/code, routes claims to web retrieval verifiers,
     executes code in a secure sandbox, and aggregates results.
     """
-<<<<<<< HEAD
+    # Auto-generate answer if the input is a question/prompt or from prose/code tabs
+    force_gen = payload.input_type in ["prose", "code"]
     if payload.skip_generation:
         answer_text = payload.answer
         is_generated = False
     else:
-        # Auto-generate answer if the input is a question/prompt
         answer_text, is_generated = auto_generate_answer(
             text=payload.answer,
             mode=payload.mode,
-            api_key=payload.gemini_api_key
+            api_key=payload.gemini_api_key,
+            force_generate=force_gen
         )
-=======
-    # Auto-generate answer if the input is a question/prompt or from prose/code tabs
-    force_gen = payload.input_type in ["prose", "code"]
-    answer_text, is_generated = auto_generate_answer(
-        text=payload.answer,
-        mode=payload.mode,
-        api_key=payload.gemini_api_key,
-        force_generate=force_gen
-    )
-    if force_gen:
-        is_generated = True
->>>>>>> 67773fe25377fbb84aa125560606f2832d34d223
+        if force_gen:
+            is_generated = True
 
     try:
         # 1. Ingest answer metadata using the actual answer_text (which might be generated)
