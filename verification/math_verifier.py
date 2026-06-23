@@ -24,6 +24,21 @@ def evaluate_math_claim(claim: str):
         
     if '=' not in clean_claim:
         return None
+
+    # Guard: reject natural language text that isn't a real math expression
+    # Must contain at least one digit or recognized math operator
+    math_operators = {'+', '-', '*', '/', '(', ')', '**', 'sqrt', 'sin', 'cos', 'tan', 'log', 'pi'}
+    has_digit = any(c.isdigit() for c in clean_claim)
+    has_operator = any(op in clean_claim for op in math_operators)
+    
+    if not has_digit and not has_operator:
+        return None
+    
+    # Reject if it looks like a natural language sentence (3+ words that are 4+ chars)
+    words = clean_claim.replace('=', ' ').split()
+    long_words = [w for w in words if len(w) >= 4 and w.isalpha()]
+    if len(long_words) >= 2:
+        return None
         
     parts = clean_claim.split('=', 1)
     if len(parts) != 2:
@@ -73,6 +88,21 @@ def evaluate_math_expression(expr: str):
     """
     clean_expr = expr.strip().lower().rstrip('.')
     clean_expr = clean_expr.replace('^', '**')
+    
+    # Guard: reject natural language text that isn't a real math expression
+    # Must contain at least one digit or recognized math operator
+    math_operators = {'+', '-', '*', '/', '(', ')', '**', 'sqrt', 'sin', 'cos', 'tan', 'log', 'pi'}
+    has_digit = any(c.isdigit() for c in clean_expr)
+    has_operator = any(op in clean_expr for op in math_operators)
+    
+    if not has_digit and not has_operator:
+        return None
+    
+    # Reject if it looks like a natural language sentence (3+ words that are 4+ chars)
+    words = clean_expr.split()
+    long_words = [w for w in words if len(w) >= 4 and w.isalpha()]
+    if len(long_words) >= 2:
+        return None
     
     try:
         val = safe_math_eval(clean_expr)

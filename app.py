@@ -26,6 +26,7 @@ class VerificationRequest(BaseModel):
     source_model: str = "Unknown"
     mode: str = "nli"  # "nli" or "gemini"
     gemini_api_key: str = None
+    skip_generation: bool = False
 
 # Legacy Request Schema
 class AnswerInput(BaseModel):
@@ -64,6 +65,7 @@ def auto_generate_answer(text: str, mode: str = "nli", api_key: str = None) -> t
     Checks if the user's input is a question, math prompt, or general request.
     If so, generates/solves the answer and returns (generated_answer, True).
     Otherwise, returns (original_text, False).
+    Works for ANY factual question by leveraging Gemini + web search evidence.
     """
     clean_text = text.strip()
     
@@ -77,17 +79,17 @@ def auto_generate_answer(text: str, mode: str = "nli", api_key: str = None) -> t
         "what", "who", "where", "when", "why", "how", "is", "are", "can",
         "calculate", "solve", "evaluate", "give", "tell", "please",
         "write", "explain", "create", "list", "show", "generate", "code",
-        "run", "describe", "compare", "define", "implement", "make", "find"
+        "run", "describe", "compare", "define", "implement", "make", "find",
+        "which", "does", "do", "could", "should", "would", "will", "was",
+        "were", "has", "have", "had", "name", "state", "mention"
     )
     is_q = (
         clean_text.endswith("?") or 
-        clean_text.lower().startswith(prompt_verbs) or
-        (len(clean_text.split()) < 35 and not any(c in clean_text for c in ["\n", "```"]))
+        clean_text.lower().startswith(prompt_verbs)
     )
     
     if is_q:
-        # If it's a math expression with some text like "what is 2 + 2?", let's clean it and evaluate if possible
-        # If the user is making a claim (contains '='), don't treat it as a math question to answer
+        # If the user is making a claim (contains '='), don't treat it as a question
         if '=' in clean_text:
             return text, False
 
@@ -95,9 +97,7 @@ def auto_generate_answer(text: str, mode: str = "nli", api_key: str = None) -> t
         math_match = re.search(r'([a-zA-Z\d\.\s\+\-\*\/\^\(\)]+)', clean_text)
         if math_match:
             expr = math_match.group(1).strip()
-            # If it contains at least one number
             if any(char.isdigit() for char in expr) or any(func in expr.lower() for func in ['pi', 'e']):
-                # Clean up prefix words to isolate the math expression
                 for prefix in ["what is", "calculate", "solve", "evaluate", "find"]:
                     if expr.lower().startswith(prefix):
                         expr = expr[len(prefix):].strip()
@@ -137,16 +137,14 @@ def auto_generate_answer(text: str, mode: str = "nli", api_key: str = None) -> t
         except Exception as e:
             print(f"Gemini answer generation fallback triggered due to error: {str(e)}")
 
-        # Local fallback for questions using search if Gemini is not configured or fails
-        q_lower = clean_text.lower()
-        if "capital" in q_lower and "india" in q_lower:
-            return "New Delhi is the capital city of India.", True
-        elif "capital" in q_lower and "australia" in q_lower:
-            return "Canberra is the capital city of Australia.", True
-            
+        # Generic fallback: use the best web search evidence as the answer
         if evidence_list:
-            # If we found evidence on the web, return the top snippet as a free fallback answer
-            return f"Search result: {evidence_list[0]['text']} (Source: {evidence_list[0]['source']})", True
+            # Combine top evidence snippets into a coherent answer
+            if len(evidence_list) >= 2:
+                combined = "\n".join([f"• {ev['text']} (Source: {ev['source']})" for ev in evidence_list[:3]])
+                return f"Based on web search results:\n{combined}", True
+            else:
+                return f"Search result: {evidence_list[0]['text']} (Source: {evidence_list[0]['source']})", True
 
         return text, False
         
@@ -160,12 +158,16 @@ def verify_answer_endpoint(payload: VerificationRequest):
     Performs ingestion, splits text into prose/code, routes claims to web retrieval verifiers,
     executes code in a secure sandbox, and aggregates results.
     """
-    # Auto-generate answer if the input is a question/prompt
-    answer_text, is_generated = auto_generate_answer(
-        text=payload.answer,
-        mode=payload.mode,
-        api_key=payload.gemini_api_key
-    )
+    if payload.skip_generation:
+        answer_text = payload.answer
+        is_generated = False
+    else:
+        # Auto-generate answer if the input is a question/prompt
+        answer_text, is_generated = auto_generate_answer(
+            text=payload.answer,
+            mode=payload.mode,
+            api_key=payload.gemini_api_key
+        )
 
     try:
         # 1. Ingest answer metadata using the actual answer_text (which might be generated)

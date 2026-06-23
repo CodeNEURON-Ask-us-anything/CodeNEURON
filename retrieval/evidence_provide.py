@@ -37,6 +37,14 @@ MOCK_EVIDENCE_DB = [
     {
         "text": "New Delhi is the capital city of India.",
         "source": "https://en.wikipedia.org/wiki/New_Delhi"
+    },
+    {
+        "text": "The Chief Minister of Karnataka is Siddaramaiah (also spelled Siddhuramaaya). He assumed office in 2023.",
+        "source": "https://en.wikipedia.org/wiki/Chief_Minister_of_Karnataka"
+    },
+    {
+        "text": "The mathematical integration of 1/(1+x2) for limit [0,1] is exactly pi/4. This is derived from the arctan rule.",
+        "source": "https://en.wikipedia.org/wiki/List_of_integrals_of_rational_functions"
     }
 ]
 
