@@ -236,6 +236,85 @@ def get_history_endpoint():
     return load_history()
 
 
+class CodeVerificationRequest(BaseModel):
+    code: str
+    language: str = "python"
+    source_model: str = "User"
+    gemini_api_key: str = None
+
+
+@app.post("/api/verify-code")
+def verify_code_endpoint(payload: CodeVerificationRequest):
+    """
+    Dedicated code-only verification endpoint.
+    Accepts raw code (no markdown wrapping needed) and runs it through
+    the full code verification pipeline: static analysis, sandbox execution,
+    test generation, and time complexity analysis.
+    """
+    import uuid
+    from datetime import datetime
+
+    code_text = payload.code.strip()
+    if not code_text:
+        raise HTTPException(status_code=400, detail="No code provided.")
+
+    use_gemini = bool(payload.gemini_api_key)
+    chunk = {
+        "type": "code",
+        "language": payload.language,
+        "content": code_text
+    }
+
+    res = verify_code_chunk(
+        chunk=chunk,
+        use_gemini=use_gemini,
+        api_key=payload.gemini_api_key
+    )
+
+    # Build a full report so the frontend can render it with the same dashboard
+    sa = res.get("static_analysis", {})
+    tr = res.get("test_results", {})
+
+    code_passed = 1 if res.get("verdict") == "PASS" else 0
+    code_failed = 1 if res.get("verdict") == "FAIL" else 0
+    code_unsafe = 1 if res.get("verdict") == "UNSAFE" else 0
+
+    score = 90 if code_passed else (30 if code_failed else 10)
+    verdict_label = "TRUSTWORTHY" if code_passed else ("UNTRUSTWORTHY" if code_failed else "UNSAFE")
+
+    full_report = {
+        "id": str(uuid.uuid4()),
+        "timestamp": datetime.now().isoformat(),
+        "source_model": payload.source_model,
+        "mode_selected": "gemini" if use_gemini else "nli",
+        "metrics": {
+            "overall_verdict": verdict_label,
+            "confidence": score / 100,
+            "score_percentage": score,
+            "summary": f"Code block verdict: {res.get('verdict', 'UNKNOWN')}. "
+                       f"Complexity: {sa.get('complexity', 'N/A')}. "
+                       f"Big-O: {sa.get('time_complexity_big_o', 'Unknown')}.",
+            "breakdown": f"Code metrics: {code_passed} passed, {code_failed} failed, {code_unsafe} unsafe executions.",
+            "metrics": {
+                "prose_total": 0,
+                "prose_supported": 0,
+                "prose_contradicted": 0,
+                "prose_neutral": 0,
+                "code_total": 1,
+                "code_passed": code_passed,
+                "code_failed": code_failed,
+                "code_unsafe": code_unsafe
+            }
+        },
+        "chunks": [res],
+        "original_prompt": None,
+        "generated_answer": None
+    }
+
+    save_history(full_report)
+    return full_report
+
+
 # Legacy endpoint for Role A Claim Extraction
 @app.post("/extract-claims", response_model=ClaimsOutput)
 def extract_claims_api(data: AnswerInput):

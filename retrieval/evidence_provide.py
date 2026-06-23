@@ -178,6 +178,46 @@ def search_duckduckgo(query: str):
     return []
 
 
+STOP_WORDS = {
+    "a", "about", "above", "after", "again", "against", "all", "am", "an", "and", "any", "are", "aren't", "as", "at", 
+    "be", "because", "been", "before", "being", "below", "between", "both", "but", "by", "can't", "cannot", "could", 
+    "couldn't", "did", "didn't", "do", "does", "doesn't", "doing", "don't", "down", "during", "each", "few", "for", 
+    "from", "further", "had", "hadn't", "has", "hasn't", "have", "haven't", "having", "he", "he'd", "he'll", "he's", 
+    "her", "here", "here's", "hers", "herself", "him", "himself", "his", "how", "how's", "i", "i'd", "i'll", "i'm", 
+    "i've", "if", "in", "into", "is", "isn't", "it", "it's", "its", "itself", "let's", "me", "more", "most", "mustn't", 
+    "my", "myself", "no", "nor", "not", "of", "off", "on", "once", "only", "or", "other", "ought", "our", "ours", 
+    "ourselves", "out", "over", "own", "same", "shan't", "she", "she'd", "she'll", "she's", "should", "shouldn't", 
+    "so", "some", "such", "than", "that", "that's", "the", "their", "theirs", "them", "themselves", "then", "there", 
+    "there's", "these", "they", "they'd", "they'll", "they're", "they've", "this", "those", "through", "to", "too", 
+    "under", "until", "up", "very", "was", "wasn't", "we", "we'd", "we'll", "we're", "we've", "were", "weren't", 
+    "what", "what's", "when", "when's", "where", "where's", "which", "while", "who", "who's", "whom", "why", "why's", 
+    "with", "won't", "would", "wouldn't", "you", "you'd", "you'll", "you're", "you've", "your", "yours", "yourself", 
+    "yourselves", "was", "is", "are", "were", "will", "would", "can", "could", "should", "shall", "may", "might", "must",
+    "somewhere", "ended", "ending", "started", "starting"
+}
+
+def extract_search_query(claim: str) -> str:
+    """
+    Extracts core keywords from a natural language claim to improve search engine hits.
+    Keeps proper nouns, numbers, and non-stopwords. Limits to ~8 keywords.
+    """
+    # Remove punctuation
+    clean_text = re.sub(r'[^\w\s]', '', claim)
+    words = clean_text.split()
+    
+    keywords = []
+    for word in words:
+        if word.lower() not in STOP_WORDS:
+            keywords.append(word)
+            
+    # If the claim was mostly stop words or too short, fallback to the original
+    if not keywords:
+        return claim
+        
+    # Limit to top 8 keywords to avoid search engine "too many words" errors
+    return " ".join(keywords[:8])
+
+
 def get_evidence_for_claim(claim: str):
     """
     Retrieves evidence snippets for a claim from all websites (DuckDuckGo + Wikipedia).
@@ -187,14 +227,16 @@ def get_evidence_for_claim(claim: str):
         return []
 
     cleaned_claim = claim.strip()
+    search_query = extract_search_query(cleaned_claim)
+    print(f"Original Claim: '{cleaned_claim}' -> Search Query: '{search_query}'")
     
     # 1. Query DuckDuckGo (searches all websites)
-    ddg_results = search_duckduckgo(cleaned_claim)
+    ddg_results = search_duckduckgo(search_query)
     
     # 2. Query Wikipedia (fallback or supplementary)
     wiki_results = []
     try:
-        encoded_query = urllib.parse.quote(cleaned_claim)
+        encoded_query = urllib.parse.quote(search_query)
         url = f"https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={encoded_query}&format=json&utf8=1"
         response = requests.get(url, timeout=5)
         if response.status_code == 200:

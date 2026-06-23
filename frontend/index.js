@@ -53,36 +53,6 @@ document.addEventListener("DOMContentLoaded", () => {
     // Raw JSON Display
     const rawJsonDisplay = document.getElementById("raw-json-display");
     
-    // ---- Custom Cursor Setup ----
-    const cursor = document.querySelector(".custom-cursor");
-    const cursorDot = document.querySelector(".custom-cursor-dot");
-
-    if (cursor && cursorDot) {
-        document.addEventListener("mousemove", (e) => {
-            cursor.style.left = e.clientX + "px";
-            cursor.style.top = e.clientY + "px";
-            cursorDot.style.left = e.clientX + "px";
-            cursorDot.style.top = e.clientY + "px";
-        });
-
-        // Trigger circular expand on interactive controls hover
-        const updateHoverables = () => {
-            const hoverables = document.querySelectorAll("a, button, select, input, textarea, .claim-highlighter, .history-item, .tab-btn, .nav-item");
-            hoverables.forEach(item => {
-                // Avoid redundant binding
-                if (item.dataset.cursorBound) return;
-                item.dataset.cursorBound = "true";
-                
-                item.addEventListener("mouseenter", () => cursor.classList.add("hovered"));
-                item.addEventListener("mouseleave", () => cursor.classList.remove("hovered"));
-            });
-        };
-
-        // Run periodically to capture dynamically appended elements
-        updateHoverables();
-        setInterval(updateHoverables, 1000);
-    }
-
     // Active States Cache
     let currentReport = null;
     let selectedClaimIndex = null;
@@ -237,6 +207,123 @@ open("hacked.txt", "w").write("test")
     
     // Run Core Full-Stack Analysis
     btnVerify.addEventListener("click", triggerAnalysis);
+
+    // ---- Code Verifier Panel Logic ----
+    const codeDirectInput = document.getElementById("code-direct-input");
+    const codeLanguageSelect = document.getElementById("code-language-select");
+    const btnVerifyCode = document.getElementById("btn-verify-code");
+    const btnClearCode = document.getElementById("btn-clear-code");
+    const codeLineNumbers = document.getElementById("code-line-numbers");
+
+    // Update line numbers in the gutter
+    function updateLineNumbers() {
+        if (!codeDirectInput || !codeLineNumbers) return;
+        const lineCount = (codeDirectInput.value || "").split("\n").length;
+        codeLineNumbers.innerHTML = "";
+        for (let i = 1; i <= Math.max(lineCount, 1); i++) {
+            const span = document.createElement("span");
+            span.textContent = i;
+            codeLineNumbers.appendChild(span);
+        }
+    }
+
+    if (codeDirectInput) {
+        codeDirectInput.addEventListener("input", updateLineNumbers);
+        codeDirectInput.addEventListener("scroll", () => {
+            codeLineNumbers.style.transform = `translateY(-${codeDirectInput.scrollTop}px)`;
+        });
+        // Tab key inserts 4 spaces instead of moving focus
+        codeDirectInput.addEventListener("keydown", (e) => {
+            if (e.key === "Tab") {
+                e.preventDefault();
+                const start = codeDirectInput.selectionStart;
+                const end = codeDirectInput.selectionEnd;
+                codeDirectInput.value = codeDirectInput.value.substring(0, start) + "    " + codeDirectInput.value.substring(end);
+                codeDirectInput.selectionStart = codeDirectInput.selectionEnd = start + 4;
+                updateLineNumbers();
+            }
+        });
+        updateLineNumbers();
+    }
+
+    if (btnClearCode) {
+        btnClearCode.addEventListener("click", () => {
+            codeDirectInput.value = "";
+            updateLineNumbers();
+        });
+    }
+
+    if (btnVerifyCode) {
+        btnVerifyCode.addEventListener("click", async () => {
+            const code = codeDirectInput.value ? codeDirectInput.value.trim() : "";
+            if (!code) {
+                alert("Please paste code into the Code Verifier panel.");
+                return;
+            }
+
+            resetVerificationStates();
+            progressCard.classList.remove("hidden");
+            btnVerifyCode.setAttribute("disabled", "true");
+            btnVerifyCode.textContent = "⏳ Verifying...";
+
+            // Pipeline animation
+            updateProgressStep("ingest", "active");
+            setTimeout(() => updateProgressStep("chunk", "active"), 300);
+            setTimeout(() => updateProgressStep("sandbox", "active"), 600);
+            setTimeout(() => updateProgressStep("verify", "active"), 900);
+            setTimeout(() => updateProgressStep("aggregate", "active"), 1200);
+
+            try {
+                const response = await fetch("/api/verify-code", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        code: code,
+                        language: codeLanguageSelect ? codeLanguageSelect.value : "python",
+                        source_model: sourceModelInput.value || "User",
+                        gemini_api_key: apiKeyInput.value || ""
+                    })
+                });
+
+                if (response.ok) {
+                    const report = await response.json();
+                    currentReport = report;
+                    Object.keys(steps).forEach(key => updateProgressStep(key, "done"));
+
+                    setTimeout(() => {
+                        progressCard.classList.add("hidden");
+                        btnVerifyCode.removeAttribute("disabled");
+                        btnVerifyCode.innerHTML = "▶ Verify Code";
+                        btnExport.removeAttribute("disabled");
+                        renderReportDashboard(report);
+
+                        // Auto-switch to code tab
+                        tabButtons.forEach(b => b.classList.remove("active"));
+                        tabContents.forEach(c => c.classList.remove("active"));
+                        const codeTab = document.querySelector('[data-tab="tab-code"]');
+                        if (codeTab) {
+                            codeTab.classList.add("active");
+                            document.getElementById("tab-code").classList.add("active");
+                        }
+
+                        loadHistoryList();
+                    }, 600);
+                } else {
+                    const err = await response.json();
+                    alert(`Code Verification Failed: ${err.detail || "Server Error"}`);
+                    btnVerifyCode.removeAttribute("disabled");
+                    btnVerifyCode.innerHTML = "▶ Verify Code";
+                    progressCard.classList.add("hidden");
+                }
+            } catch (e) {
+                console.error("Code verification call failure", e);
+                alert("Failed to reach server. Ensure FastAPI backend is running on port 8000.");
+                btnVerifyCode.removeAttribute("disabled");
+                btnVerifyCode.innerHTML = "▶ Verify Code";
+                progressCard.classList.add("hidden");
+            }
+        });
+    }
 
     // Boot Database Load
     loadHistoryList();
@@ -611,6 +698,20 @@ open("hacked.txt", "w").write("test")
         document.getElementById("metric-lints").textContent = `${sa.lint_errors || 0} Alert(s)`;
         document.getElementById("metric-time").textContent = tr.time || "0.00s";
         document.getElementById("metric-security").textContent = `${sa.security_issues || 0} Alert(s)`;
+        
+        // 1.5 Render Error localization
+        const errorAlert = document.getElementById("code-error-alert");
+        const errorText = document.getElementById("code-error-text");
+        if (tr.error_line && tr.error_message) {
+            errorText.textContent = `Execution Error on Line ${tr.error_line}: ${tr.error_message}`;
+            errorAlert.classList.remove("hidden");
+        } else {
+            errorAlert.classList.add("hidden");
+        }
+        
+        // 1.6 Render Time Complexity
+        document.getElementById("code-big-o").textContent = sa.time_complexity_big_o || "O(1)";
+        document.getElementById("code-complexity-improvement").textContent = sa.complexity_improvement || "LLM required for analysis.";
         
         // 2. Render code display
         document.getElementById("code-source-display").textContent = codeChunk.code;

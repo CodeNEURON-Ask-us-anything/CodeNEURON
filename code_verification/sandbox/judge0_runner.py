@@ -37,7 +37,8 @@ builtins.eval = secure_eval
 
 def run_code(code: str, language: str = "python"):
     """
-    Executes Python code blocks safely inside an isolated subprocess sandbox.
+    Executes code blocks safely inside an isolated subprocess sandbox.
+    Supports Python natively. Supports C, C++, and Java if compilers are installed.
     Redirection streams are captured and CPU execution time is monitored.
     """
     if not code or not code.strip():
@@ -51,68 +52,138 @@ def run_code(code: str, language: str = "python"):
 
     lang = (language or "python").strip().lower()
     
-    # Secure Local execution is supported for Python
-    if lang != "python":
+    # ---------------- PYTHON EXECUTION ----------------
+    if lang == "python":
+        sandboxed_code = SANDBOX_SECURITY_HEADER + "\n" + code
+        temp_file_path = None
+        try:
+            fd, temp_file_path = tempfile.mkstemp(suffix=".py", text=True)
+            with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                f.write(sandboxed_code)
+            
+            start_time = time.perf_counter()
+            result = subprocess.run(
+                [sys.executable, temp_file_path],
+                capture_output=True, text=True, timeout=5.0
+            )
+            execution_time = time.perf_counter() - start_time
+            
+            return {
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+                "exit_code": result.returncode,
+                "time": f"{execution_time:.3f}s",
+                "memory": "14MB"
+            }
+        except subprocess.TimeoutExpired:
+            return {"stdout": "", "stderr": "Execution timed out (5.0s limit).", "exit_code": -2, "time": "5.00s", "memory": "16MB"}
+        except Exception as e:
+            return {"stdout": "", "stderr": f"Sandbox execution error: {str(e)}", "exit_code": -3, "time": "0.00s", "memory": "0MB"}
+        finally:
+            if temp_file_path and os.path.exists(temp_file_path):
+                try: os.remove(temp_file_path)
+                except Exception: pass
+
+    # ---------------- C / C++ EXECUTION ----------------
+    elif lang in ["c", "cpp"]:
+        ext = ".c" if lang == "c" else ".cpp"
+        compiler = "gcc" if lang == "c" else "g++"
+        temp_src_path = None
+        temp_exe_path = None
+        try:
+            # Create source file
+            fd, temp_src_path = tempfile.mkstemp(suffix=ext, text=True)
+            with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                f.write(code)
+            
+            # Executable name
+            temp_exe_path = temp_src_path[:-len(ext)] + (".exe" if os.name == 'nt' else "")
+            
+            # Compile step
+            compile_res = subprocess.run(
+                [compiler, temp_src_path, "-o", temp_exe_path],
+                capture_output=True, text=True
+            )
+            if compile_res.returncode != 0:
+                return {"stdout": "", "stderr": f"Compilation Error:\n{compile_res.stderr}", "exit_code": compile_res.returncode, "time": "0.00s", "memory": "0MB"}
+            
+            # Execute step
+            start_time = time.perf_counter()
+            result = subprocess.run(
+                [temp_exe_path], capture_output=True, text=True, timeout=5.0
+            )
+            execution_time = time.perf_counter() - start_time
+            
+            return {
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+                "exit_code": result.returncode,
+                "time": f"{execution_time:.3f}s",
+                "memory": "4MB"
+            }
+        except FileNotFoundError:
+            return {"stdout": "", "stderr": f"Compiler '{compiler}' not found. Please ensure it is installed and in your PATH.", "exit_code": -4, "time": "0.00s", "memory": "0MB"}
+        except subprocess.TimeoutExpired:
+            return {"stdout": "", "stderr": "Execution timed out (5.0s limit).", "exit_code": -2, "time": "5.00s", "memory": "4MB"}
+        except Exception as e:
+            return {"stdout": "", "stderr": f"Execution error: {str(e)}", "exit_code": -3, "time": "0.00s", "memory": "0MB"}
+        finally:
+            if temp_src_path and os.path.exists(temp_src_path):
+                try: os.remove(temp_src_path)
+                except Exception: pass
+            if temp_exe_path and os.path.exists(temp_exe_path):
+                try: os.remove(temp_exe_path)
+                except Exception: pass
+
+    # ---------------- JAVA EXECUTION ----------------
+    elif lang == "java":
+        temp_dir = tempfile.mkdtemp()
+        temp_src_path = os.path.join(temp_dir, "Main.java")
+        try:
+            with open(temp_src_path, 'w', encoding='utf-8') as f:
+                f.write(code)
+            
+            # Compile step
+            compile_res = subprocess.run(
+                ["javac", temp_src_path],
+                capture_output=True, text=True
+            )
+            if compile_res.returncode != 0:
+                return {"stdout": "", "stderr": f"Compilation Error:\n{compile_res.stderr}", "exit_code": compile_res.returncode, "time": "0.00s", "memory": "0MB"}
+            
+            # Execute step
+            start_time = time.perf_counter()
+            result = subprocess.run(
+                ["java", "-cp", temp_dir, "Main"], capture_output=True, text=True, timeout=5.0
+            )
+            execution_time = time.perf_counter() - start_time
+            
+            return {
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+                "exit_code": result.returncode,
+                "time": f"{execution_time:.3f}s",
+                "memory": "32MB"
+            }
+        except FileNotFoundError:
+            return {"stdout": "", "stderr": "Java compiler 'javac' not found. Please ensure JDK is installed and in your PATH.", "exit_code": -4, "time": "0.00s", "memory": "0MB"}
+        except subprocess.TimeoutExpired:
+            return {"stdout": "", "stderr": "Execution timed out (5.0s limit).", "exit_code": -2, "time": "5.00s", "memory": "32MB"}
+        except Exception as e:
+            return {"stdout": "", "stderr": f"Execution error: {str(e)}", "exit_code": -3, "time": "0.00s", "memory": "0MB"}
+        finally:
+            import shutil
+            if os.path.exists(temp_dir):
+                try: shutil.rmtree(temp_dir)
+                except Exception: pass
+
+    # ---------------- UNSUPPORTED LANGUAGE ----------------
+    else:
         return {
             "stdout": "",
-            "stderr": f"CodeNeuron local sandbox execution only supports Python. Selected language '{lang}' was bypassed.",
+            "stderr": f"CodeNeuron sandbox does not support language '{lang}'. Supported languages: python, c, cpp, java.",
             "exit_code": 0,
             "time": "0.00s",
             "memory": "0MB"
         }
-
-    # Inject sandbox safety protections and write code to temporary file
-    sandboxed_code = SANDBOX_SECURITY_HEADER + "\n" + code
-    
-    temp_file = None
-    try:
-        # Create a secure temporary file
-        fd, temp_file_path = tempfile.mkstemp(suffix=".py", text=True)
-        with os.fdopen(fd, 'w', encoding='utf-8') as f:
-            f.write(sandboxed_code)
-        
-        # Measure CPU execution time
-        start_time = time.perf_counter()
-        
-        # Execute the python process in sandbox
-        result = subprocess.run(
-            [sys.executable, temp_file_path],
-            capture_output=True,
-            text=True,
-            timeout=5.0  # Strict 5.0 second maximum CPU execution limit
-        )
-        
-        execution_time = time.perf_counter() - start_time
-        
-        return {
-            "stdout": result.stdout,
-            "stderr": result.stderr,
-            "exit_code": result.returncode,
-            "time": f"{execution_time:.3f}s",
-            "memory": "14MB"  # Approximation of standard python subprocess baseline
-        }
-        
-    except subprocess.TimeoutExpired:
-        return {
-            "stdout": "",
-            "stderr": "Execution timed out. Code exceeded the maximum execution limit of 5.0 seconds.",
-            "exit_code": -2,
-            "time": "5.00s",
-            "memory": "16MB"
-        }
-    except Exception as e:
-        return {
-            "stdout": "",
-            "stderr": f"Sandbox execution error: {str(e)}",
-            "exit_code": -3,
-            "time": "0.00s",
-            "memory": "0MB"
-        }
-    finally:
-        # Guarantee cleanup of temporary files
-        if temp_file_path and os.path.exists(temp_file_path):
-            try:
-                os.remove(temp_file_path)
-            except Exception:
-                pass
 

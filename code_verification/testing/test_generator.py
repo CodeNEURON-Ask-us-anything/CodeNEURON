@@ -3,12 +3,17 @@ import re
 from code_verification.sandbox.judge0_runner import run_code
 from verification.gemini_verifier import get_gemini_model
 
-def generate_tests(code: str, use_gemini: bool = False, api_key: str = None):
+def generate_tests(code: str, use_gemini: bool = False, api_key: str = None, language: str = "python"):
     """
     Generates unit tests (python assertion statements) for a code block.
     Uses Gemini 1.5 Flash if requested, or falls back to AST-based signature parsing.
+    Currently bypasses test generation for non-Python languages.
     """
     if not code or not code.strip():
+        return ""
+
+    lang = language.strip().lower()
+    if lang != "python":
         return ""
 
     if use_gemini:
@@ -47,10 +52,8 @@ def generate_tests(code: str, use_gemini: bool = False, api_key: str = None):
         else:
             for idx, func in enumerate(funcs[:3]): # limit to top 3 functions
                 func_name = func.name
-                # Inspect arguments count to generate a suitable default call
                 args_count = len(func.args.args)
                 
-                # Deduce arguments default signature call
                 defaults = []
                 for _ in range(args_count):
                     defaults.append("1") # fallback default value
@@ -58,12 +61,9 @@ def generate_tests(code: str, use_gemini: bool = False, api_key: str = None):
                 signature_call = ", ".join(defaults)
                 
                 test_cases.append(f"""
-try:
-    # Auto test for {func_name}
-    result_{idx} = {func_name}({signature_call})
-    print("TEST_CASE_{idx+1}: PASSED ({func_name} executed without error)")
-except Exception as e:
-    print("TEST_CASE_{idx+1}: FAILED ({func_name} call failed: " + type(e).__name__ + ")")
+# Auto test for {func_name}
+result_{idx} = {func_name}({signature_call})
+print("TEST_CASE_{idx+1}: PASSED ({func_name} executed without error)")
 """)
     except Exception:
         test_cases.append("print('TEST_CASE_1: PASSED')")
@@ -71,7 +71,7 @@ except Exception as e:
     return "\n".join(test_cases)
 
 
-def run_tests(code: str, test_code: str):
+def run_tests(code: str, test_code: str, language: str = "python"):
     """
     Executes the combined user code and generated test code inside the secure sandbox.
     Parses stdout indicators to calculate passed and failed test cases.
@@ -79,10 +79,16 @@ def run_tests(code: str, test_code: str):
     if not code or not code.strip():
         return {"passed": 0, "failed": 0, "details": ["No code to test."]}
 
-    combined_code = code + "\n\n" + (test_code or "")
+    lang = language.strip().lower()
+    
+    # Only append test code if python (since test_code is python-specific currently)
+    if lang == "python" and test_code:
+        combined_code = code + "\n\n" + test_code
+    else:
+        combined_code = code
     
     # Run in subprocess sandbox
-    run_result = run_code(combined_code, "python")
+    run_result = run_code(combined_code, lang)
     
     stdout = run_result.get("stdout", "")
     stderr = run_result.get("stderr", "")
@@ -97,10 +103,38 @@ def run_tests(code: str, test_code: str):
         if "TEST_CASE_" in line or "AssertionError" in line or "PermissionError" in line:
             details.append(line.strip())
             
+    # Parse Exact Error Line and Message from Traceback
+    error_line = None
+    error_message = None
+    
+    if stderr:
+        if lang == "python":
+            # Look for the last file line indicator in the traceback
+            line_matches = re.findall(r'File ".*?", line (\d+)', stderr)
+            if line_matches:
+                raw_line = int(line_matches[-1])
+                # Subtract 30 lines for the SANDBOX_SECURITY_HEADER offset
+                adjusted_line = raw_line - 30
+                if adjusted_line > 0:
+                    error_line = adjusted_line
+                else:
+                    error_line = raw_line # Fell within header or test runner code
+        else:
+            # Basic parsing for GCC / Javac errors (e.g. file.c:4: error: ...)
+            line_matches = re.findall(r'[^:]+:(\d+):', stderr)
+            if line_matches:
+                error_line = int(line_matches[0])
+                
+        # The actual error message is typically the last non-empty line
+        stderr_lines = [l.strip() for l in stderr.splitlines() if l.strip()]
+        if stderr_lines:
+            error_message = stderr_lines[-1]
+            
     # If exit code was not 0 and no test failures were explicitly counted, it's a runtime error
     if run_result.get("exit_code", 0) != 0 and passed_cases == 0 and failed_cases == 0:
         failed_cases = 1
-        details.append(f"Runtime Failure (Exit code: {run_result.get('exit_code')}). Traceback details: {stderr.strip()[:150]}")
+        err_display = error_message if error_message else stderr.strip()[:150]
+        details.append(f"Runtime Failure (Exit code: {run_result.get('exit_code')}). {err_display}")
 
     if passed_cases == 0 and failed_cases == 0:
         # Default fallback
@@ -113,6 +147,8 @@ def run_tests(code: str, test_code: str):
         "details": details,
         "stdout": stdout,
         "stderr": stderr,
+        "error_line": error_line,
+        "error_message": error_message,
         "exit_code": run_result.get("exit_code", 0),
         "time": run_result.get("time", "0.00s"),
         "memory": run_result.get("memory", "0MB")
