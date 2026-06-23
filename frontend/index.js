@@ -6,7 +6,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const codeDirectInput = document.getElementById("code-direct-input");
     let currentInputMode = "verify";
     
-    const btnVerify = document.getElementById("btn-submit");
+    const btnVerify = document.getElementById("btn-verify");
     const btnClear = document.getElementById("btn-clear");
     const btnDemo = document.getElementById("btn-demo-data");
     const btnExport = document.getElementById("btn-export-pdf");
