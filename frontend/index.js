@@ -269,8 +269,8 @@ open("hacked.txt", "w").write("test")
                     body: JSON.stringify({
                         code: code,
                         language: codeLanguageSelect ? codeLanguageSelect.value : "python",
-                        source_model: sourceModelInput.value || "User",
-                        gemini_api_key: apiKeyInput.value || ""
+                        source_model: document.getElementById("source-model")?.value || "User",
+                        gemini_api_key: document.getElementById("gemini-api-key")?.value || ""
                     })
                 });
 
