@@ -2,10 +2,9 @@
 
 document.addEventListener("DOMContentLoaded", () => {
     // ---- DOM Element Selectors ----
-    const aiInputProse = document.getElementById("ai-input-prose");
-    const aiInputCode = document.getElementById("ai-input-code");
-    const aiInputVerify = document.getElementById("ai-input-verify");
-    let currentInputMode = "prose";
+    const aiInputVerify = document.getElementById("ai-answer-input");
+    const codeDirectInput = document.getElementById("code-direct-input");
+    let currentInputMode = "verify";
     
     const btnVerify = document.getElementById("btn-submit");
     const btnClear = document.getElementById("btn-clear");
@@ -90,8 +89,6 @@ open("hacked.txt", "w").write("test")
     
     // Clear Input
     btnClear.addEventListener("click", () => {
-        aiInputProse.value = "";
-        aiInputCode.value = "";
         aiInputVerify.value = "";
         resetVerificationStates();
     });
@@ -99,7 +96,6 @@ open("hacked.txt", "w").write("test")
     // Load Demo Data
     btnDemo.addEventListener("click", () => {
         aiInputVerify.value = DEMO_EXAMPLE;
-        document.getElementById("tab-verify").click();
     });
     
     // Export PDF Report
@@ -146,26 +142,28 @@ open("hacked.txt", "w").write("test")
     setupCopyButton("btn-copy-code", "#code-source-display", true);
     setupCopyButton("btn-copy-json", "#raw-json-display", true);
 
-    // Input Tab switching routing
-    const inputTabs = [
-        { btn: document.getElementById("tab-prose"), area: aiInputProse, mode: "prose" },
-        { btn: document.getElementById("tab-code"), area: aiInputCode, mode: "code" },
-        { btn: document.getElementById("tab-verify"), area: aiInputVerify, mode: "verify" }
-    ];
-
-    inputTabs.forEach(tab => {
-        tab.btn.addEventListener("click", () => {
-            // Remove active/hidden
-            inputTabs.forEach(t => {
-                t.btn.classList.remove("active");
-                t.area.classList.add("hidden");
-            });
-            // Set active
-            tab.btn.classList.add("active");
-            tab.area.classList.remove("hidden");
-            currentInputMode = tab.mode;
+    // Toggle input modes (Verify AI Output vs Ask Direct Question)
+    const btnToggleVerify = document.getElementById("toggle-verify-mode");
+    const btnToggleAsk = document.getElementById("toggle-ask-mode");
+    const inputTitle = document.getElementById("input-title");
+    
+    if (btnToggleVerify && btnToggleAsk) {
+        btnToggleVerify.addEventListener("click", () => {
+            btnToggleVerify.classList.add("active");
+            btnToggleAsk.classList.remove("active");
+            inputTitle.textContent = "Raw AI Output Input";
+            aiInputVerify.placeholder = "Paste the AI-generated answer here, mixing prose explanations and python code blocks (in ```python...``` blocks)...";
+            currentInputMode = "verify";
         });
-    });
+        
+        btnToggleAsk.addEventListener("click", () => {
+            btnToggleAsk.classList.add("active");
+            btnToggleVerify.classList.remove("active");
+            inputTitle.textContent = "Ask CodeNeuron (AI Assistant)";
+            aiInputVerify.placeholder = "Ask a direct question here... (e.g. 'What is the capital of Australia?', 'Write a function to sort an array')";
+            currentInputMode = "ask";
+        });
+    }
 
     // Real-time History Filtering
     const historySearchInput = document.getElementById("history-search");
@@ -387,12 +385,9 @@ open("hacked.txt", "w").write("test")
     }
 
     async function triggerAnalysis() {
-        let text = "";
-        if (currentInputMode === "prose") text = aiInputProse.value.trim();
-        else if (currentInputMode === "code") text = aiInputCode.value.trim();
-        else if (currentInputMode === "verify") text = aiInputVerify.value.trim();
+        let text = aiInputVerify.value ? aiInputVerify.value.trim() : "";
         if (!text) {
-            alert("Please paste an AI answer to verify.");
+            alert("Please paste an AI answer or ask a question to verify.");
             return;
         }
         
@@ -405,9 +400,10 @@ open("hacked.txt", "w").write("test")
         
         const payload = {
             answer: text,
-            source_model: "DirectInput",
-            mode: "gemini",
-            gemini_api_key: ""
+            source_model: document.getElementById("source-model")?.value || "DirectInput",
+            mode: document.getElementById("verification-mode")?.value || "gemini",
+            gemini_api_key: document.getElementById("gemini-api-key")?.value || "",
+            input_type: currentInputMode
         };
         
         // Pipeline transitions timing simulator to match REST steps

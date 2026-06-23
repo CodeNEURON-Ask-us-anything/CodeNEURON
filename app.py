@@ -173,7 +173,7 @@ def verify_answer_endpoint(payload: VerificationRequest):
     executes code in a secure sandbox, and aggregates results.
     """
     # Auto-generate answer if the input is a question/prompt or from prose/code tabs
-    force_gen = payload.input_type in ["prose", "code"]
+    force_gen = payload.input_type in ["ask", "prose", "code"]
     if payload.skip_generation:
         answer_text = payload.answer
         is_generated = False
