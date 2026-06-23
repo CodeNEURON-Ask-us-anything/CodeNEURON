@@ -6,6 +6,3 @@ google-generativeai
 fastapi
 uvicorn
 sympy
-python-dotenv
-openai
-groq

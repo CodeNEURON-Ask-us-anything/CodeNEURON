@@ -2,12 +2,13 @@
 
 document.addEventListener("DOMContentLoaded", () => {
     // ---- DOM Element Selectors ----
-    const aiInputProse = document.getElementById("ai-input-prose");
-    const aiInputCode = document.getElementById("ai-input-code");
-    const aiInputVerify = document.getElementById("ai-input-verify");
-    let currentInputMode = "prose";
+    const aiInput = document.getElementById("ai-answer-input");
+    const modeSelect = document.getElementById("verification-mode");
+    const apiKeyGroup = document.getElementById("api-key-group");
+    const apiKeyInput = document.getElementById("gemini-api-key");
+    const sourceModelInput = document.getElementById("source-model");
     
-    const btnVerify = document.getElementById("btn-submit");
+    const btnVerify = document.getElementById("btn-verify");
     const btnClear = document.getElementById("btn-clear");
     const btnDemo = document.getElementById("btn-demo-data");
     const btnExport = document.getElementById("btn-export-pdf");
@@ -52,6 +53,36 @@ document.addEventListener("DOMContentLoaded", () => {
     // Raw JSON Display
     const rawJsonDisplay = document.getElementById("raw-json-display");
     
+    // ---- Custom Cursor Setup ----
+    const cursor = document.querySelector(".custom-cursor");
+    const cursorDot = document.querySelector(".custom-cursor-dot");
+
+    if (cursor && cursorDot) {
+        document.addEventListener("mousemove", (e) => {
+            cursor.style.left = e.clientX + "px";
+            cursor.style.top = e.clientY + "px";
+            cursorDot.style.left = e.clientX + "px";
+            cursorDot.style.top = e.clientY + "px";
+        });
+
+        // Trigger circular expand on interactive controls hover
+        const updateHoverables = () => {
+            const hoverables = document.querySelectorAll("a, button, select, input, textarea, .claim-highlighter, .history-item, .tab-btn, .nav-item");
+            hoverables.forEach(item => {
+                // Avoid redundant binding
+                if (item.dataset.cursorBound) return;
+                item.dataset.cursorBound = "true";
+                
+                item.addEventListener("mouseenter", () => cursor.classList.add("hovered"));
+                item.addEventListener("mouseleave", () => cursor.classList.remove("hovered"));
+            });
+        };
+
+        // Run periodically to capture dynamically appended elements
+        updateHoverables();
+        setInterval(updateHoverables, 1000);
+    }
+
     // Active States Cache
     let currentReport = null;
     let selectedClaimIndex = null;
@@ -88,18 +119,25 @@ open("hacked.txt", "w").write("test")
 
     // ---- Event Listeners ----
     
+    // Toggle API Key Input Visibility based on mode selected
+    modeSelect.addEventListener("change", () => {
+        if (modeSelect.value === "gemini") {
+            apiKeyGroup.classList.remove("hidden");
+        } else {
+            apiKeyGroup.classList.add("hidden");
+        }
+    });
+    
     // Clear Input
     btnClear.addEventListener("click", () => {
-        aiInputProse.value = "";
-        aiInputCode.value = "";
-        aiInputVerify.value = "";
+        aiInput.value = "";
         resetVerificationStates();
     });
     
     // Load Demo Data
     btnDemo.addEventListener("click", () => {
-        aiInputVerify.value = DEMO_EXAMPLE;
-        document.getElementById("tab-verify").click();
+        aiInput.value = DEMO_EXAMPLE;
+        sourceModelInput.value = "ChatGPT-4o";
     });
     
     // Export PDF Report
@@ -146,25 +184,26 @@ open("hacked.txt", "w").write("test")
     setupCopyButton("btn-copy-code", "#code-source-display", true);
     setupCopyButton("btn-copy-json", "#raw-json-display", true);
 
-    // Input Tab switching routing
-    const inputTabs = [
-        { btn: document.getElementById("tab-prose"), area: aiInputProse, mode: "prose" },
-        { btn: document.getElementById("tab-code"), area: aiInputCode, mode: "code" },
-        { btn: document.getElementById("tab-verify"), area: aiInputVerify, mode: "verify" }
-    ];
+    // Direct Question Mode toggle handling
+    const toggleVerifyMode = document.getElementById("toggle-verify-mode");
+    const toggleAskMode = document.getElementById("toggle-ask-mode");
+    const inputTitle = document.getElementById("input-title");
+    let isDirectQuestionMode = false;
 
-    inputTabs.forEach(tab => {
-        tab.btn.addEventListener("click", () => {
-            // Remove active/hidden
-            inputTabs.forEach(t => {
-                t.btn.classList.remove("active");
-                t.area.classList.add("hidden");
-            });
-            // Set active
-            tab.btn.classList.add("active");
-            tab.area.classList.remove("hidden");
-            currentInputMode = tab.mode;
-        });
+    toggleVerifyMode.addEventListener("click", () => {
+        toggleVerifyMode.classList.add("active");
+        toggleAskMode.classList.remove("active");
+        inputTitle.textContent = "Raw AI Output Input";
+        aiInput.placeholder = "Paste the AI-generated answer here, mixing prose explanations and python code blocks (in ```python...``` blocks)...";
+        isDirectQuestionMode = false;
+    });
+
+    toggleAskMode.addEventListener("click", () => {
+        toggleAskMode.classList.add("active");
+        toggleVerifyMode.classList.remove("active");
+        inputTitle.textContent = "Ask a Direct Question / Prompt";
+        aiInput.placeholder = "Enter any question or prompt (e.g. 'Explain photosynthesis' or 'Write a bubble sort function'). CodeNeuron will generate the response and verify it automatically...";
+        isDirectQuestionMode = true;
     });
 
     // Real-time History Filtering
@@ -198,123 +237,6 @@ open("hacked.txt", "w").write("test")
     
     // Run Core Full-Stack Analysis
     btnVerify.addEventListener("click", triggerAnalysis);
-
-    // ---- Code Verifier Panel Logic ----
-    const codeDirectInput = document.getElementById("code-direct-input");
-    const codeLanguageSelect = document.getElementById("code-language-select");
-    const btnVerifyCode = document.getElementById("btn-verify-code");
-    const btnClearCode = document.getElementById("btn-clear-code");
-    const codeLineNumbers = document.getElementById("code-line-numbers");
-
-    // Update line numbers in the gutter
-    function updateLineNumbers() {
-        if (!codeDirectInput || !codeLineNumbers) return;
-        const lineCount = (codeDirectInput.value || "").split("\n").length;
-        codeLineNumbers.innerHTML = "";
-        for (let i = 1; i <= Math.max(lineCount, 1); i++) {
-            const span = document.createElement("span");
-            span.textContent = i;
-            codeLineNumbers.appendChild(span);
-        }
-    }
-
-    if (codeDirectInput) {
-        codeDirectInput.addEventListener("input", updateLineNumbers);
-        codeDirectInput.addEventListener("scroll", () => {
-            codeLineNumbers.style.transform = `translateY(-${codeDirectInput.scrollTop}px)`;
-        });
-        // Tab key inserts 4 spaces instead of moving focus
-        codeDirectInput.addEventListener("keydown", (e) => {
-            if (e.key === "Tab") {
-                e.preventDefault();
-                const start = codeDirectInput.selectionStart;
-                const end = codeDirectInput.selectionEnd;
-                codeDirectInput.value = codeDirectInput.value.substring(0, start) + "    " + codeDirectInput.value.substring(end);
-                codeDirectInput.selectionStart = codeDirectInput.selectionEnd = start + 4;
-                updateLineNumbers();
-            }
-        });
-        updateLineNumbers();
-    }
-
-    if (btnClearCode) {
-        btnClearCode.addEventListener("click", () => {
-            codeDirectInput.value = "";
-            updateLineNumbers();
-        });
-    }
-
-    if (btnVerifyCode) {
-        btnVerifyCode.addEventListener("click", async () => {
-            const code = codeDirectInput.value ? codeDirectInput.value.trim() : "";
-            if (!code) {
-                alert("Please paste code into the Code Verifier panel.");
-                return;
-            }
-
-            resetVerificationStates();
-            progressCard.classList.remove("hidden");
-            btnVerifyCode.setAttribute("disabled", "true");
-            btnVerifyCode.textContent = "⏳ Verifying...";
-
-            // Pipeline animation
-            updateProgressStep("ingest", "active");
-            setTimeout(() => updateProgressStep("chunk", "active"), 300);
-            setTimeout(() => updateProgressStep("sandbox", "active"), 600);
-            setTimeout(() => updateProgressStep("verify", "active"), 900);
-            setTimeout(() => updateProgressStep("aggregate", "active"), 1200);
-
-            try {
-                const response = await fetch("/api/verify-code", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        code: code,
-                        language: codeLanguageSelect ? codeLanguageSelect.value : "python",
-                        source_model: sourceModelInput.value || "User",
-                        gemini_api_key: apiKeyInput.value || ""
-                    })
-                });
-
-                if (response.ok) {
-                    const report = await response.json();
-                    currentReport = report;
-                    Object.keys(steps).forEach(key => updateProgressStep(key, "done"));
-
-                    setTimeout(() => {
-                        progressCard.classList.add("hidden");
-                        btnVerifyCode.removeAttribute("disabled");
-                        btnVerifyCode.innerHTML = "▶ Verify Code";
-                        btnExport.removeAttribute("disabled");
-                        renderReportDashboard(report);
-
-                        // Auto-switch to code tab
-                        tabButtons.forEach(b => b.classList.remove("active"));
-                        tabContents.forEach(c => c.classList.remove("active"));
-                        const codeTab = document.querySelector('[data-tab="tab-code"]');
-                        if (codeTab) {
-                            codeTab.classList.add("active");
-                            document.getElementById("tab-code").classList.add("active");
-                        }
-
-                        loadHistoryList();
-                    }, 600);
-                } else {
-                    const err = await response.json();
-                    alert(`Code Verification Failed: ${err.detail || "Server Error"}`);
-                    btnVerifyCode.removeAttribute("disabled");
-                    btnVerifyCode.innerHTML = "▶ Verify Code";
-                    progressCard.classList.add("hidden");
-                }
-            } catch (e) {
-                console.error("Code verification call failure", e);
-                alert("Failed to reach server. Ensure FastAPI backend is running on port 8000.");
-                btnVerifyCode.removeAttribute("disabled");
-                btnVerifyCode.innerHTML = "▶ Verify Code";
-                progressCard.classList.add("hidden");
-            }
-        });
-    }
 
     // Boot Database Load
     loadHistoryList();
@@ -357,8 +279,6 @@ open("hacked.txt", "w").write("test")
             const item = document.createElement("div");
             item.className = `history-item ${currentReport && currentReport.id === entry.id ? 'active' : ''}`;
             
-            const titleText = entry.original_prompt ? entry.original_prompt : "Verified Output";
-        
             item.innerHTML = `
                 <div class="history-header">
                     <span>${timeStr}</span>
@@ -368,9 +288,6 @@ open("hacked.txt", "w").write("test")
                 <div class="history-score-row">
                     <span class="badge ${badgeClass}">${entry.metrics.overall_verdict}</span>
                     <span style="font-weight:600; font-size:12px;">${entry.metrics.score_percentage}%</span>
-                </div>
-                <div style="font-size: 11px; margin-top: 4px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                    ${titleText}
                 </div>
             `;
             
@@ -387,10 +304,7 @@ open("hacked.txt", "w").write("test")
     }
 
     async function triggerAnalysis() {
-        let text = "";
-        if (currentInputMode === "prose") text = aiInputProse.value.trim();
-        else if (currentInputMode === "code") text = aiInputCode.value.trim();
-        else if (currentInputMode === "verify") text = aiInputVerify.value.trim();
+        const text = aiInput.value ? aiInput.value.trim() : "";
         if (!text) {
             alert("Please paste an AI answer to verify.");
             return;
@@ -405,9 +319,9 @@ open("hacked.txt", "w").write("test")
         
         const payload = {
             answer: text,
-            source_model: "DirectInput",
-            mode: "gemini",
-            gemini_api_key: ""
+            source_model: sourceModelInput.value || "Unknown",
+            mode: modeSelect.value,
+            gemini_api_key: apiKeyInput.value || ""
         };
         
         // Pipeline transitions timing simulator to match REST steps
@@ -508,21 +422,10 @@ open("hacked.txt", "w").write("test")
         // 2. Render report assessments text
         reportTitle.textContent = m.summary;
         let reportTextContent = `Analysis conducted via CodeNeuron ${report.mode_selected.toUpperCase()} engine. Source LLM: ${report.source_model}.`;
-        
-        // Render the generated answer properly
-        const genAnsSection = document.getElementById("generated-answer-section");
-        const genAnsContent = document.getElementById("generated-answer-content");
         if (report.generated_answer) {
-            genAnsSection.style.display = "block";
-            // Use marked.js to render Markdown
-            genAnsContent.innerHTML = marked.parse(report.generated_answer);
-            if (window.MathJax) {
-                MathJax.typesetPromise([genAnsContent]).catch(err => console.log('MathJax error: ', err));
-            }
-        } else {
-            genAnsSection.style.display = "none";
+            reportTextContent = `Generated Answer: "${report.generated_answer}"\n\n` + reportTextContent;
+            aiInput.value = report.generated_answer;
         }
-
         reportText.textContent = reportTextContent;
         reportBreakdown.textContent = m.breakdown;
         
@@ -582,11 +485,6 @@ open("hacked.txt", "w").write("test")
         
         // 6. Render Raw telemetry JSON
         rawJsonDisplay.textContent = JSON.stringify(report, null, 4);
-
-        // Typeset all math in the prose highlighted text container
-        if (window.MathJax) {
-            MathJax.typesetPromise([proseHighlightedText]).catch(err => console.log('MathJax error: ', err));
-        }
     }
 
     function renderProseHighlights(chunks) {
@@ -604,7 +502,7 @@ open("hacked.txt", "w").write("test")
                 proseFound = true;
                 const span = document.createElement("span");
                 span.className = `claim-highlighter ${c.verdict}`;
-                span.innerHTML = c.content + " ";
+                span.textContent = c.content + " ";
                 span.setAttribute("data-index", idx);
                 
                 span.addEventListener("click", () => {
@@ -650,20 +548,13 @@ open("hacked.txt", "w").write("test")
             document.getElementById("evidence-relevance-pill").textContent = `Assessment Confidence: ${relevancePercentage}%`;
             
             const sourceUrl = document.getElementById("evidence-source-url");
-            sourceUrl.href = claimChunk.source_link || ev.source;
-            sourceUrl.textContent = "View Exact Source Page \u2192";
+            sourceUrl.href = ev.source;
+            sourceUrl.textContent = ev.source.startsWith("http") ? new URL(ev.source).hostname : "Wikipedia Documentation Link";
             sourceUrl.classList.remove("hidden");
-            
-            if (document.getElementById("evidence-exact-quote")) {
-                document.getElementById("evidence-exact-quote").textContent = claimChunk.exact_quote || ev.text;
-            }
         } else {
             document.getElementById("evidence-source-text").textContent = "No external documents retrieved containing aligned claims.";
             document.getElementById("evidence-relevance-pill").textContent = "Assessment Confidence: 30%";
             document.getElementById("evidence-source-url").classList.add("hidden");
-            if (document.getElementById("evidence-exact-quote")) {
-                document.getElementById("evidence-exact-quote").textContent = "N/A";
-            }
         }
     }
 
@@ -720,24 +611,6 @@ open("hacked.txt", "w").write("test")
         document.getElementById("metric-lints").textContent = `${sa.lint_errors || 0} Alert(s)`;
         document.getElementById("metric-time").textContent = tr.time || "0.00s";
         document.getElementById("metric-security").textContent = `${sa.security_issues || 0} Alert(s)`;
-        if (document.getElementById("metric-time-complex")) {
-            document.getElementById("metric-time-complex").textContent = codeChunk.time_complexity || "N/A";
-            document.getElementById("metric-space-complex").textContent = codeChunk.space_complexity || "N/A";
-        }
-        
-        // 1.5 Render Error localization
-        const errorAlert = document.getElementById("code-error-alert");
-        const errorText = document.getElementById("code-error-text");
-        if (tr.error_line && tr.error_message) {
-            errorText.textContent = `Execution Error on Line ${tr.error_line}: ${tr.error_message}`;
-            errorAlert.classList.remove("hidden");
-        } else {
-            errorAlert.classList.add("hidden");
-        }
-        
-        // 1.6 Render Time Complexity
-        document.getElementById("code-big-o").textContent = sa.time_complexity_big_o || "O(1)";
-        document.getElementById("code-complexity-improvement").textContent = sa.complexity_improvement || "LLM required for analysis.";
         
         // 2. Render code display
         document.getElementById("code-source-display").textContent = codeChunk.code;
@@ -811,10 +684,5 @@ open("hacked.txt", "w").write("test")
         
         // 6. Render generated test suite code
         document.getElementById("code-test-source-display").textContent = codeChunk.test_source || "# Test script generated successfully.";
-        
-        // 7. Render optimized code
-        if (document.getElementById("code-optimized-display")) {
-            document.getElementById("code-optimized-display").textContent = codeChunk.optimized_solution || "N/A";
-        }
     }
 });

@@ -2,17 +2,14 @@ import os
 import json
 import re
 from datetime import datetime
-from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-load_dotenv()
-
 from ingestion.ingest import ingest_answer
 from chunking.chunker import chunk_answer, extract_claims
-from verification.claim_verifier import verify_fact, batch_verify_facts
+from verification.claim_verifier import verify_fact
 from code_verification.router import verify_code_chunk
 from aggregation.answer_aggregator import aggregate_claim_results
 from verification.math_verifier import evaluate_math_expression
@@ -29,11 +26,6 @@ class VerificationRequest(BaseModel):
     source_model: str = "Unknown"
     mode: str = "nli"  # "nli" or "gemini"
     gemini_api_key: str = None
-<<<<<<< HEAD
-    skip_generation: bool = False
-=======
-    input_type: str = "verify"
->>>>>>> 67773fe25377fbb84aa125560606f2832d34d223
 
 # Legacy Request Schema
 class AnswerInput(BaseModel):
@@ -67,7 +59,7 @@ def save_history(entry):
         print(f"Error saving historical log: {str(e)}")
 
 
-def auto_generate_answer(text: str, mode: str = "nli", api_key: str = None, force_generate: bool = False) -> tuple[str, bool]:
+def auto_generate_answer(text: str, mode: str = "nli", api_key: str = None) -> tuple[str, bool]:
     """
     Checks if the user's input is a question, math prompt, or general request.
     If so, generates/solves the answer and returns (generated_answer, True).
@@ -95,14 +87,8 @@ def auto_generate_answer(text: str, mode: str = "nli", api_key: str = None, forc
         clean_text.lower().startswith(prompt_verbs)
     )
     
-<<<<<<< HEAD
     if is_q:
         # If the user is making a claim (contains '='), don't treat it as a question
-=======
-    if is_q or force_generate:
-        # If it's a math expression with some text like "what is 2 + 2?", let's clean it and evaluate if possible
-        # If the user is making a claim (contains '='), don't treat it as a math question to answer
->>>>>>> 67773fe25377fbb84aa125560606f2832d34d223
         if '=' in clean_text:
             return text, False
 
@@ -132,14 +118,14 @@ def auto_generate_answer(text: str, mode: str = "nli", api_key: str = None, forc
             if model:
                 prompt = (
                     "You are a factual assistant. Provide a highly accurate, detailed, and comprehensive answer to the following question. "
-                    "Provide the answer directly without conversational filler. Do NOT reference 'the provided context' or 'the retrieved evidence' in your answer.\n"
                     "If the question asks for code, provide functional python code blocks wrapped in ```python ... ```.\n"
                     "If the question asks for math, solve it step-by-step.\n\n"
                     f"Question: {clean_text}\n\n"
                 )
                 if context_str:
                     prompt += (
-                        "Here is some retrieved web-grounded search evidence. You MUST fact check your answer against this evidence and rely heavily on it to ensure your response is up-to-date and factually accurate. If the evidence provides new information that contradicts your internal knowledge, trust the evidence:\n"
+                        "Use the following retrieved web-grounded search evidence (prioritizing certified sources) to construct your response. "
+                        "Make sure your response is fully grounded in the provided facts:\n"
                         f"{context_str}\n\n"
                     )
                 
@@ -150,7 +136,6 @@ def auto_generate_answer(text: str, mode: str = "nli", api_key: str = None, forc
         except Exception as e:
             print(f"Gemini answer generation fallback triggered due to error: {str(e)}")
 
-<<<<<<< HEAD
         # Generic fallback: use the best web search evidence as the answer
         if evidence_list:
             # Combine top evidence snippets into a coherent answer
@@ -159,30 +144,8 @@ def auto_generate_answer(text: str, mode: str = "nli", api_key: str = None, forc
                 return f"Based on web search results:\n{combined}", True
             else:
                 return f"Search result: {evidence_list[0]['text']} (Source: {evidence_list[0]['source']})", True
-=======
-        # Local fallback for questions using search if Gemini is not configured or fails
-        q_lower = clean_text.lower()
-        if "capital" in q_lower and "india" in q_lower:
-            return "New Delhi is the capital city of India.", True
-        elif "capital" in q_lower and "australia" in q_lower:
-            return "Canberra is the capital city of Australia.", True
-            
-        # Provide a structured detailed mock answer if the user forced generation but Gemini failed
-        structured_fallback = f"### Generated Assessment Response\n\nYou asked: **{clean_text}**\n\nBased on internal knowledge and search results, here is the detailed breakdown:\n"
-        if evidence_list:
-            structured_fallback += "\n**Web References:**\n" + "\n".join([f"- {ev['text']} *(Source: {ev['source']})*" for ev in evidence_list[:3]]) + "\n\n"
-        else:
-            structured_fallback += "\nNo web search context was retrieved for this prompt.\n\n"
-        
-        structured_fallback += "**Note:** *The generative engine (Gemini) could not be reached, so this is a structured fallback response. Ensure your API connectivity is valid.*\n"
-        
-        if force_generate and "code" in q_lower or "function" in q_lower or "sort" in q_lower or "implement" in q_lower:
-            structured_fallback += "\nHere is a functional boilerplate template for your request:\n```python\ndef generated_function():\n    # Implement your logic here\n    pass\n```\n"
->>>>>>> 67773fe25377fbb84aa125560606f2832d34d223
 
-        return structured_fallback, True
-        
-    return text, False
+        return text, False
         
     return text, False
 
@@ -194,29 +157,12 @@ def verify_answer_endpoint(payload: VerificationRequest):
     Performs ingestion, splits text into prose/code, routes claims to web retrieval verifiers,
     executes code in a secure sandbox, and aggregates results.
     """
-<<<<<<< HEAD
-    if payload.skip_generation:
-        answer_text = payload.answer
-        is_generated = False
-    else:
-        # Auto-generate answer if the input is a question/prompt
-        answer_text, is_generated = auto_generate_answer(
-            text=payload.answer,
-            mode=payload.mode,
-            api_key=payload.gemini_api_key
-        )
-=======
-    # Auto-generate answer if the input is a question/prompt or from prose/code tabs
-    force_gen = payload.input_type in ["prose", "code"]
+    # Auto-generate answer if the input is a question/prompt
     answer_text, is_generated = auto_generate_answer(
         text=payload.answer,
         mode=payload.mode,
-        api_key=payload.gemini_api_key,
-        force_generate=force_gen
+        api_key=payload.gemini_api_key
     )
-    if force_gen:
-        is_generated = True
->>>>>>> 67773fe25377fbb84aa125560606f2832d34d223
 
     try:
         # 1. Ingest answer metadata using the actual answer_text (which might be generated)
@@ -230,20 +176,14 @@ def verify_answer_endpoint(payload: VerificationRequest):
     # 3. Route chunks dynamically to respective verification handlers
     verified_chunks = []
     
-    # Process prose chunks in batch
-    prose_chunks = [c for c in chunks if c["type"] == "prose"]
-    if prose_chunks:
-        # We can extract the "context" for the batch by joining all chunk texts, or just passing None
-        # Passing None for context in batch, or we could pass the entire ingested["answer_text"]
-        batch_results = batch_verify_facts(
-            claims=[c["content"] for c in prose_chunks],
-            mode=payload.mode,
-            gemini_api_key=payload.gemini_api_key,
-            context=ingested["answer_text"]
-        )
-        
-        for i, chunk in enumerate(prose_chunks):
-            res = batch_results[i]
+    for chunk in chunks:
+        if chunk["type"] == "prose":
+            # Verify factual prose claims
+            res = verify_fact(
+                claim=chunk["content"],
+                mode=payload.mode,
+                gemini_api_key=payload.gemini_api_key
+            )
             verified_chunks.append({
                 "type": "prose",
                 "content": chunk["content"],
@@ -254,9 +194,7 @@ def verify_answer_endpoint(payload: VerificationRequest):
                 "explanation": res.get("explanation", "")
             })
             
-    # Process code chunks sequentially (sandbox runs are isolated and fast enough)
-    for chunk in chunks:
-        if chunk["type"] == "code":
+        elif chunk["type"] == "code":
             # Parse, execute, and verify test assertions in code sandbox
             use_gemini = (payload.mode == "gemini")
             res = verify_code_chunk(
@@ -265,21 +203,6 @@ def verify_answer_endpoint(payload: VerificationRequest):
                 api_key=payload.gemini_api_key
             )
             verified_chunks.append(res)
-            
-    # Restore original chunk ordering
-    original_order_verified_chunks = []
-    prose_idx = 0
-    code_idx = 0
-    for chunk in chunks:
-        if chunk["type"] == "prose":
-            original_order_verified_chunks.append(verified_chunks[prose_idx])
-            prose_idx += 1
-        else:
-            # Code chunk was appended after all prose chunks in verified_chunks
-            original_order_verified_chunks.append(verified_chunks[len(prose_chunks) + code_idx])
-            code_idx += 1
-            
-    verified_chunks = original_order_verified_chunks
 
     # 4. Aggregate findings into unified confidence assessments
     aggregated_report = aggregate_claim_results(verified_chunks)
@@ -288,8 +211,8 @@ def verify_answer_endpoint(payload: VerificationRequest):
     full_report = {
         "id": ingested["id"],
         "timestamp": ingested["timestamp"],
-        "source_model": "Multi-Agent Consensus (Gemini, Groq, OpenAI)",
-        "mode_selected": "Ensemble Verification",
+        "source_model": ingested["source_model"],
+        "mode_selected": payload.mode,
         "metrics": aggregated_report,
         "chunks": verified_chunks,
         "original_prompt": payload.answer if is_generated else None,
@@ -306,85 +229,6 @@ def verify_answer_endpoint(payload: VerificationRequest):
 def get_history_endpoint():
     """Retrieves all past logs of verification reports."""
     return load_history()
-
-
-class CodeVerificationRequest(BaseModel):
-    code: str
-    language: str = "python"
-    source_model: str = "User"
-    gemini_api_key: str = None
-
-
-@app.post("/api/verify-code")
-def verify_code_endpoint(payload: CodeVerificationRequest):
-    """
-    Dedicated code-only verification endpoint.
-    Accepts raw code (no markdown wrapping needed) and runs it through
-    the full code verification pipeline: static analysis, sandbox execution,
-    test generation, and time complexity analysis.
-    """
-    import uuid
-    from datetime import datetime
-
-    code_text = payload.code.strip()
-    if not code_text:
-        raise HTTPException(status_code=400, detail="No code provided.")
-
-    use_gemini = bool(payload.gemini_api_key)
-    chunk = {
-        "type": "code",
-        "language": payload.language,
-        "content": code_text
-    }
-
-    res = verify_code_chunk(
-        chunk=chunk,
-        use_gemini=use_gemini,
-        api_key=payload.gemini_api_key
-    )
-
-    # Build a full report so the frontend can render it with the same dashboard
-    sa = res.get("static_analysis", {})
-    tr = res.get("test_results", {})
-
-    code_passed = 1 if res.get("verdict") == "PASS" else 0
-    code_failed = 1 if res.get("verdict") == "FAIL" else 0
-    code_unsafe = 1 if res.get("verdict") == "UNSAFE" else 0
-
-    score = 90 if code_passed else (30 if code_failed else 10)
-    verdict_label = "TRUSTWORTHY" if code_passed else ("UNTRUSTWORTHY" if code_failed else "UNSAFE")
-
-    full_report = {
-        "id": str(uuid.uuid4()),
-        "timestamp": datetime.now().isoformat(),
-        "source_model": payload.source_model,
-        "mode_selected": "gemini" if use_gemini else "nli",
-        "metrics": {
-            "overall_verdict": verdict_label,
-            "confidence": score / 100,
-            "score_percentage": score,
-            "summary": f"Code block verdict: {res.get('verdict', 'UNKNOWN')}. "
-                       f"Complexity: {sa.get('complexity', 'N/A')}. "
-                       f"Big-O: {sa.get('time_complexity_big_o', 'Unknown')}.",
-            "breakdown": f"Code metrics: {code_passed} passed, {code_failed} failed, {code_unsafe} unsafe executions.",
-            "metrics": {
-                "prose_total": 0,
-                "prose_supported": 0,
-                "prose_contradicted": 0,
-                "prose_neutral": 0,
-                "code_total": 1,
-                "code_passed": code_passed,
-                "code_failed": code_failed,
-                "code_unsafe": code_unsafe
-            }
-        },
-        "chunks": [res],
-        "original_prompt": None,
-        "generated_answer": None
-    }
-
-    save_history(full_report)
-    return full_report
 
 
 # Legacy endpoint for Role A Claim Extraction
