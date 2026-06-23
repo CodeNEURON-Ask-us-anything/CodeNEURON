@@ -198,7 +198,6 @@ open("hacked.txt", "w").write("test")
     btnVerify.addEventListener("click", triggerAnalysis);
 
     // ---- Code Verifier Panel Logic ----
-    const codeDirectInput = document.getElementById("code-direct-input");
     const codeLanguageSelect = document.getElementById("code-language-select");
     const btnVerifyCode = document.getElementById("btn-verify-code");
     const btnClearCode = document.getElementById("btn-clear-code");
