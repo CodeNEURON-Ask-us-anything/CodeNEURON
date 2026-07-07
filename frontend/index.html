@@ -3,418 +3,82 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CodeNeuron - AI Answer Verification & Validation Platform</title>
-    <!-- Google Fonts -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
-    <!-- Load styles with cache-buster to fix cursor issues -->
-    <link rel="stylesheet" href="index.css?v=2">
+    <title>CodeNeuron — AI Fact Verification & Code Analysis</title>
+    <meta name="description" content="Paste any factual claim or code snippet and get instant, grounded verification with source links.">
+    <link rel="stylesheet" href="index.css?v=13">
+    <!-- Markdown Parser -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
 <body>
-    <div class="app-container">
-        <!-- Sidebar Navigation & History Logs -->
-        <aside class="sidebar glass-panel">
-            <div class="brand">
-                <div class="brand-logo">
-                    <span class="neuron-node"></span>
-                    <span class="neuron-pulse"></span>
-                </div>
-                <h2>CodeNeuron</h2>
+
+    <!-- Top Navigation -->
+    <header class="app-header">
+        <div class="brand">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent);"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+            CodeNeuron
+        </div>
+        <div class="model-selector">
+            <button id="btn-new-chat" class="input-outline" style="cursor: pointer; background: var(--bg-hover); color: var(--text-primary); font-weight: 500;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;"><path d="M12 5v14M5 12h14"/></svg>New Chat
+            </button>
+            <select id="verification-mode" class="input-outline">
+                <option value="gemini" selected>Grounded Gemini</option>
+                <option value="nli">Local NLI</option>
+            </select>
+            <input type="password" id="gemini-api-key" class="input-outline" placeholder="API Key" style="width: 140px;">
+        </div>
+    </header>
+
+    <!-- Main Chat Area -->
+    <main class="main-container" id="main-scroll">
+        <div class="chat-container" id="chat-container">
+            <div class="welcome-screen" id="welcome-screen">
+                <h1>What can I verify for you?</h1>
+                <p>Paste a factual claim, ask a question, or submit code. I'll verify it instantly against live web sources and give you a credibility score with links.</p>
             </div>
-            
-            <div class="sidebar-section">
-                <h3>Verification Settings</h3>
-                <div class="form-group">
-                    <label for="verification-mode">Engine Model</label>
-                    <select id="verification-mode" class="input-control">
-                        <option value="nli">Local NLI (bart-large-mnli)</option>
-                        <option value="gemini" selected>Grounded Gemini 1.5 Flash</option>
-                    </select>
-                </div>
-                
-                <div class="form-group" id="api-key-group">
-                    <label for="gemini-api-key">Gemini API Key</label>
-                    <input type="password" id="gemini-api-key" class="input-control" placeholder="Using default template key..." autocomplete="new-password">
-                </div>
+        </div>
+    </main>
 
-                <div class="form-group">
-                    <label for="source-model">Source LLM</label>
-                    <input type="text" id="source-model" class="input-control" value="ChatGPT" placeholder="e.g. Claude 3.5, ChatGPT">
-                </div>
+    <!-- Bottom Input Bar -->
+    <div class="input-container">
+        <div class="input-wrapper">
+            <textarea id="prompt-input" rows="1" placeholder="Ask anything, verify a claim, or paste code..."></textarea>
+            <div class="input-actions">
+                <button class="btn-submit" id="btn-submit" title="Send">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+                </button>
             </div>
-
-            <div class="sidebar-section">
-                <h3>Analysis History</h3>
-                <div class="form-group" style="margin-bottom:12px;">
-                    <input type="text" id="history-search" class="input-control" placeholder="🔍 Search history..." style="font-size:12px; padding:6px 10px;">
-                </div>
-                <div id="history-list" class="history-list" style="max-height: 250px; overflow-y: auto;">
-                    <div class="empty-history">No past analyses found.</div>
-                </div>
-                <button id="btn-clear-history" class="btn btn-secondary" style="width:100%; margin-top:10px; padding:6px 12px; font-size:11px;">Clear History</button>
-            </div>
-
-            <div class="sidebar-section">
-                <h3>Engine Configuration</h3>
-                <div class="engine-config-card" style="background:rgba(255,255,255,0.02); border:1px solid var(--border-color); border-radius:8px; padding:12px;">
-                    <div style="display:flex; justify-content:space-between; margin-bottom:6px; font-size:11px; color:var(--text-secondary);">
-                        <span>Status:</span>
-                        <span style="color:var(--color-green); font-weight:600; display:inline-flex; align-items:center; gap:4px;">
-                            <span style="width:6px; height:6px; background-color:var(--color-green); border-radius:50%; display:inline-block; box-shadow:0 0 6px var(--color-green)"></span>
-                            ACTIVE
-                        </span>
-                    </div>
-                    <div style="display:flex; justify-content:space-between; margin-bottom:6px; font-size:11px; color:var(--text-secondary);">
-                        <span>Search Retriever:</span>
-                        <span style="color:var(--color-blue); font-weight:600;">DDG + Wiki</span>
-                    </div>
-                    <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--text-secondary);">
-                        <span>Model:</span>
-                        <span style="color:var(--color-purple); font-weight:600;">gemini-2.5-flash</span>
-                    </div>
-                </div>
-            </div>
-
-            <div class="sidebar-footer">
-                <p>CodeNeuron v1.2.0</p>
-                <div class="health-indicator">
-                    <span class="pulse-dot green"></span>
-                    <span>API: Connected</span>
-                </div>
-            </div>
-        </aside>
-
-        <!-- Main Dashboard Workspace -->
-        <main class="workspace">
-            <header class="workspace-header glass-panel">
-                <h1>AI Answer Verification Platform</h1>
-                <div class="action-buttons" style="display:flex; gap:12px;">
-                    <button id="btn-export-pdf" class="btn btn-secondary" disabled>Export PDF Report</button>
-                    <button id="btn-demo-data" class="btn btn-secondary">Load Demo Example</button>
-                </div>
-            </header>
-
-            <!-- Real-time dynamic dashboard status widget cards -->
-            <div class="metrics-grid col-span-12" style="display:grid; grid-template-columns:repeat(4, 1fr); gap:16px; margin-bottom:24px;">
-                <div class="metric-card glass-panel" style="border-radius:12px; padding:18px; text-align:left; border: 1px solid var(--border-color); background: rgba(14,20,38,0.4);">
-                    <small style="color:var(--text-muted); font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:1px; display:block; margin-bottom:6px;">PROSE STATS</small>
-                    <div style="display:flex; justify-content:space-between; align-items:baseline;">
-                        <strong id="widget-prose-stats" style="font-family:'Outfit', sans-serif; font-size:24px; color:#fff;">0 / 0</strong>
-                        <span style="font-size:11px; color:var(--color-blue);">Claims verified</span>
-                    </div>
-                    <div style="height:4px; width:100%; background:rgba(255,255,255,0.05); border-radius:2px; margin-top:10px; overflow:hidden;">
-                        <div id="widget-prose-progress" style="height:100%; width:0%; background:var(--color-blue); transition:width 1s ease-in-out;"></div>
-                    </div>
-                </div>
-
-                <div class="metric-card glass-panel" style="border-radius:12px; padding:18px; text-align:left; border: 1px solid var(--border-color); background: rgba(14,20,38,0.4);">
-                    <small style="color:var(--text-muted); font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:1px; display:block; margin-bottom:6px;">CODE CONSOLE</small>
-                    <div style="display:flex; justify-content:space-between; align-items:baseline;">
-                        <strong id="widget-code-stats" style="font-family:'Outfit', sans-serif; font-size:24px; color:#fff;">0 Blocks</strong>
-                        <span style="font-size:11px; color:var(--color-green);">Sandboxed Exec</span>
-                    </div>
-                    <div style="height:4px; width:100%; background:rgba(255,255,255,0.05); border-radius:2px; margin-top:10px; overflow:hidden;">
-                        <div id="widget-code-progress" style="height:100%; width:0%; background:var(--color-green); transition:width 1s ease-in-out;"></div>
-                    </div>
-                </div>
-
-                <div class="metric-card glass-panel" style="border-radius:12px; padding:18px; text-align:left; border: 1px solid var(--border-color); background: rgba(14,20,38,0.4);">
-                    <small style="color:var(--text-muted); font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:1px; display:block; margin-bottom:6px;">CREDIBILITY RATING</small>
-                    <div style="display:flex; justify-content:space-between; align-items:baseline;">
-                        <strong id="widget-credibility-score" style="font-family:'Outfit', sans-serif; font-size:24px; color:#fff;">100%</strong>
-                        <span id="widget-credibility-badge" class="badge PASS">TRUSTWORTHY</span>
-                    </div>
-                    <div style="height:4px; width:100%; background:rgba(255,255,255,0.05); border-radius:2px; margin-top:10px; overflow:hidden;">
-                        <div id="widget-credibility-progress" style="height:100%; width:100%; background:var(--color-green); transition:width 1.2s ease-in-out, background 0.5s ease;"></div>
-                    </div>
-                </div>
-
-                <div class="metric-card glass-panel" style="border-radius:12px; padding:18px; text-align:left; border: 1px solid var(--border-color); background: rgba(14,20,38,0.4);">
-                    <small style="color:var(--text-muted); font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:1px; display:block; margin-bottom:6px;">WEB SOURCES REFERENCE</small>
-                    <div style="display:flex; justify-content:space-between; align-items:baseline;">
-                        <strong id="widget-source-stats" style="font-family:'Outfit', sans-serif; font-size:24px; color:#fff;">0 Sites</strong>
-                        <span style="font-size:11px; color:var(--color-purple);">Vetted grounds</span>
-                    </div>
-                    <div style="height:4px; width:100%; background:rgba(255,255,255,0.05); border-radius:2px; margin-top:10px; overflow:hidden;">
-                        <div id="widget-source-progress" style="height:100%; width:0%; background:var(--color-purple); transition:width 1s ease-in-out;"></div>
-                    </div>
-                </div>
-            </div>
-
-            <section class="grid-layout">
-                <!-- Input Panel -->
-                <div class="card glass-panel col-span-6">
-                    <div class="card-header">
-                        <h3 id="input-title">Raw AI Output Input</h3>
-                        <div style="display:flex; gap:8px;">
-                            <button id="toggle-verify-mode" class="btn btn-secondary active" style="padding:4px 10px; font-size:11px; border-radius:4px;">Verify AI Output</button>
-                            <button id="toggle-ask-mode" class="btn btn-secondary" style="padding:4px 10px; font-size:11px; border-radius:4px;">Ask Direct Question</button>
-                        </div>
-                    </div>
-                    <div class="card-body">
-                        <textarea id="ai-answer-input" class="textarea-control" placeholder="Paste the AI-generated answer here, mixing prose explanations and python code blocks (in ```python...``` blocks)..."></textarea>
-                        <div class="action-bar">
-                            <button id="btn-clear" class="btn btn-secondary">Clear</button>
-                            <button id="btn-verify" class="btn btn-primary">Analyze & Verify</button>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Dedicated Code Verifier Panel -->
-                <div class="card glass-panel col-span-6" id="code-upload-card" style="position:relative; z-index:5;">
-                    <div class="card-header" style="border-bottom: 1px solid rgba(80,250,123,0.2);">
-                        <h3 style="display:flex; align-items:center; gap:8px;">
-                            <span style="display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; background:rgba(80,250,123,0.15); border-radius:6px; font-size:14px;">⌨</span>
-                            Code Verifier
-                        </h3>
-                        <div style="display:flex; align-items:center; gap:8px;">
-                            <select id="code-language-select" class="input-control" style="width:auto; padding:4px 28px 4px 10px; font-size:11px; border-radius:4px; background-size:8px;">
-                                <option value="python" selected>Python</option>
-                                <option value="c">C</option>
-                                <option value="cpp">C++</option>
-                                <option value="java">Java</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="card-body" style="display:flex; flex-direction:column; gap:12px;">
-                        <div style="position:relative; flex:1;">
-                            <div style="position:absolute; top:0; left:0; bottom:0; width:36px; background:rgba(0,0,0,0.3); border-radius:8px 0 0 8px; display:flex; flex-direction:column; align-items:center; padding-top:16px; font-family:'Fira Code',monospace; font-size:11px; color:var(--text-muted); line-height:1.54; pointer-events:none; user-select:none;" id="code-line-numbers">
-                                <span>1</span>
-                            </div>
-                            <textarea id="code-direct-input" class="textarea-control" style="height:180px; padding-left:44px; font-family:'Fira Code','Courier New',monospace; font-size:13px; line-height:1.54; tab-size:4; white-space:pre; overflow-wrap:normal; overflow-x:auto; background:rgba(0,0,0,0.25); border-color:rgba(80,250,123,0.2);" placeholder="Paste your code directly here — no markdown needed.&#10;&#10;def fibonacci(n):&#10;    if n <= 1:&#10;        return n&#10;    return fibonacci(n-1) + fibonacci(n-2)" spellcheck="false"></textarea>
-                        </div>
-                        <div class="action-bar" style="margin-top:0;">
-                            <button id="btn-clear-code" class="btn btn-secondary">Clear</button>
-                            <button id="btn-verify-code" class="btn btn-primary" style="background:var(--color-green); box-shadow:var(--shadow-green); color:#070a13; font-weight:700;">
-                                ▶ Verify Code
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Live Progress Tracking Panel -->
-                <div id="progress-card" class="card glass-panel col-span-6 hidden">
-                    <div class="card-header">
-                        <h3>Pipeline Execution Progress</h3>
-                    </div>
-                    <div class="card-body">
-                        <div class="pipeline-steps">
-                            <div class="pipeline-step" id="step-ingest">
-                                <div class="step-status"><span class="step-spinner"></span></div>
-                                <div class="step-text">Ingesting Answer Metadata</div>
-                            </div>
-                            <div class="pipeline-step" id="step-chunk">
-                                <div class="step-status"><span class="step-bullet"></span></div>
-                                <div class="step-text">Splitting Prose & Code Blocks</div>
-                            </div>
-                            <div class="pipeline-step" id="step-search">
-                                <div class="step-status"><span class="step-bullet"></span></div>
-                                <div class="step-text">Querying Free Wikipedia Search API</div>
-                            </div>
-                            <div class="pipeline-step" id="step-verify">
-                                <div class="step-status"><span class="step-bullet"></span></div>
-                                <div class="step-text">Executing Grounded NLI/Gemini Verifications</div>
-                            </div>
-                            <div class="pipeline-step" id="step-sandbox">
-                                <div class="step-status"><span class="step-bullet"></span></div>
-                                <div class="step-text">Running Code in Isolated Subprocess Sandbox</div>
-                            </div>
-                            <div class="pipeline-step" id="step-aggregate">
-                                <div class="step-status"><span class="step-bullet"></span></div>
-                                <div class="step-text">Compiling Trust Metrics & Scores</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Aggregated Score Gauge Panel -->
-                <div id="results-card" class="card glass-panel col-span-6 hidden">
-                    <div class="card-header">
-                        <h3>Assessment Report</h3>
-                        <span id="verdict-badge" class="badge">UNKNOWN</span>
-                    </div>
-                    <div class="card-body results-body">
-                        <div class="score-container">
-                            <div class="radial-score">
-                                <svg width="120" height="120" viewBox="0 0 120 120">
-                                    <circle class="bg-circle" cx="60" cy="60" r="50"></circle>
-                                    <circle id="score-circle" class="progress-circle" cx="60" cy="60" r="50"></circle>
-                                </svg>
-                                <div class="score-value">
-                                    <span id="trust-percentage">0%</span>
-                                    <small>Trust Score</small>
-                                </div>
-                            </div>
-                            <div class="score-details">
-                                <h4 id="report-summary-title">Awaiting Assessment</h4>
-                                <p id="report-summary-text">Submit an answer above to trigger verification.</p>
-                                <div class="breakdown-pill" id="report-breakdown">Supported/Contradicted counts</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Tabbed Analysis Dashboard -->
-                <div id="dashboard-card" class="card glass-panel col-span-12 hidden">
-                    <div class="tab-header">
-                        <button class="tab-btn active" data-tab="tab-prose">Sentence-Level Prose Factual Audit</button>
-                        <button class="tab-btn" data-tab="tab-code">Sandboxed Code Sandbox Console</button>
-                        <button class="tab-btn" data-tab="tab-raw">Raw Verification Telemetry JSON</button>
-                    </div>
-                    
-                    <div class="card-body tab-content-container">
-                        <!-- Prose Analysis Tab -->
-                        <div class="tab-content active" id="tab-prose">
-                            <div class="prose-split-view">
-                                <div class="prose-highlighter-panel" style="position:relative;">
-                                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 16px;">
-                                        <h4 style="margin:0;">Answer Prose highlighter (Click highlighted sentence to view evidence)</h4>
-                                        <button id="btn-copy-prose" class="btn btn-secondary" style="padding:4px 10px; font-size:11px; border-radius:4px;">📋 Copy Text</button>
-                                    </div>
-                                    <div id="prose-highlighted-text" class="highlighted-text-area">
-                                        <!-- Highlighted content will go here -->
-                                    </div>
-                                </div>
-                                <div class="prose-evidence-drawer" id="evidence-drawer">
-                                    <div class="empty-drawer-state">
-                                        <p>Select a highlighted sentence to view supporting evidence retrieved from Wikipedia.</p>
-                                    </div>
-                                    <div class="drawer-content hidden">
-                                        <div class="drawer-header">
-                                            <h4>Evidence Inspector</h4>
-                                            <span id="evidence-verdict" class="badge">SUPPORTED</span>
-                                        </div>
-                                        <div class="form-group">
-                                            <label>Claim Text</label>
-                                            <blockquote id="evidence-claim-text">""</blockquote>
-                                        </div>
-                                        <div class="form-group">
-                                            <label>Verdict Explanation</label>
-                                            <p id="evidence-explanation-text"></p>
-                                        </div>
-                                        <div class="form-group">
-                                            <label>Evidence Document Source</label>
-                                            <div class="evidence-card">
-                                                <p id="evidence-source-text"></p>
-                                                <div class="evidence-metadata">
-                                                    <span id="evidence-relevance-pill">Match Relevance: 0%</span>
-                                                    <a id="evidence-source-url" href="#" target="_blank">View Wikipedia Article &rarr;</a>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Code Analysis Tab -->
-                        <div class="tab-content" id="tab-code">
-                            <div class="code-analysis-layout">
-                                <div class="code-selector-sidebar">
-                                    <h4>Code Blocks Found</h4>
-                                    <div id="code-blocks-list" class="list-navigation">
-                                        <!-- list of code blocks -->
-                                    </div>
-                                </div>
-                                
-                                <div class="code-inspection-panel" id="code-inspector-panel">
-                                    <div class="empty-drawer-state" id="code-empty-state">
-                                        <p>No Python code blocks detected in this answer.</p>
-                                    </div>
-                                    
-                                    <div class="code-inspector-content hidden" id="code-inspector-content">
-                                        <div class="card-inner-header">
-                                            <h4 id="code-block-title">Python Code Analysis</h4>
-                                            <div style="display:flex; align-items:center; gap:8px;">
-                                                <button id="btn-copy-code" class="btn btn-secondary" style="padding:4px 10px; font-size:11px; border-radius:4px;">📋 Copy Code</button>
-                                                <span id="code-verdict-badge" class="badge">PASS</span>
-                                            </div>
-                                        </div>
-                                        
-                                        <div class="metrics-grid">
-                                            <div class="metric-card">
-                                                <small>Static Complexity</small>
-                                                <strong id="metric-complexity">LOW</strong>
-                                            </div>
-                                            <div class="metric-card">
-                                                <small>AST Style Lints</small>
-                                                <strong id="metric-lints">0 Errors</strong>
-                                            </div>
-                                            <div class="metric-card">
-                                                <small>Execution Time</small>
-                                                <strong id="metric-time">0.05s</strong>
-                                            </div>
-                                            <div class="metric-card">
-                                                <small>Security Audit</small>
-                                                <strong id="metric-security">0 Issues</strong>
-                                            </div>
-                                        </div>
-
-                                        <div id="code-error-alert" class="code-section-group hidden" style="background: rgba(255, 85, 85, 0.1); border: 1px solid var(--color-red); padding: 12px; border-radius: 8px;">
-                                            <div class="section-label" style="color: var(--color-red); font-weight: bold; margin-bottom: 4px;">Execution Error Detected</div>
-                                            <div id="code-error-text" style="color: #ffb8b8; font-family: 'Fira Code', monospace; font-size: 12px;"></div>
-                                        </div>
-
-                                        <div class="code-section-group">
-                                            <div class="section-label">Time Complexity Analysis</div>
-                                            <div style="background: rgba(189, 147, 249, 0.1); border: 1px solid var(--color-purple); padding: 12px; border-radius: 8px;">
-                                                <strong id="code-big-o" style="font-size: 18px; color: var(--color-purple); display: block; margin-bottom: 4px;">O(1)</strong>
-                                                <p id="code-complexity-improvement" style="color: #ccc; font-size: 12px; margin: 0; line-height: 1.4;">LLM required for analysis.</p>
-                                            </div>
-                                        </div>
-
-                                        <div class="code-section-group">
-                                            <div class="section-label">Source Code Block</div>
-                                            <pre class="code-block-container"><code id="code-source-display"></code></pre>
-                                        </div>
-
-                                        <div class="grid-two-column">
-                                            <div class="code-section-group">
-                                                <div class="section-label">Security & Lint Audit Console</div>
-                                                <div id="code-warnings-list" class="warnings-terminal">
-                                                    <!-- Warning statements here -->
-                                                </div>
-                                            </div>
-                                            <div class="code-section-group">
-                                                <div class="section-label">Sanity Unit Assertion Results</div>
-                                                <div id="code-tests-list" class="tests-terminal">
-                                                    <!-- Assertion details here -->
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <div class="code-section-group">
-                                            <div class="section-label">Sandboxed Console Output (stdout/stderr)</div>
-                                            <pre class="terminal-container"><code id="code-terminal-display"></code></pre>
-                                        </div>
-                                        
-                                        <div class="code-section-group">
-                                            <div class="section-label">Generated Test Assertions Script</div>
-                                            <pre class="code-block-container"><code id="code-test-source-display"></code></pre>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Raw JSON Payload Tab -->
-                        <div class="tab-content" id="tab-raw">
-                            <div class="raw-payload-panel" style="position:relative;">
-                                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-                                    <h4 style="margin:0;">Full JSON Payload Schema</h4>
-                                    <button id="btn-copy-json" class="btn btn-secondary" style="padding:4px 10px; font-size:11px; border-radius:4px;">📋 Copy JSON</button>
-                                </div>
-                                <pre class="code-block-container"><code id="raw-json-display">{}</code></pre>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </section>
-        </main>
+        </div>
     </div>
 
-    <!-- Frontend Logic with cache-buster -->
-    <script src="index.js?v=6"></script>
+    <!-- Templates -->
+    <template id="tpl-user-msg">
+        <div class="message">
+            <div class="message-avatar avatar-user">U</div>
+            <div class="message-content"><div class="user-text"></div></div>
+        </div>
+    </template>
+
+    <template id="tpl-ai-msg">
+        <div class="message">
+            <div class="message-avatar avatar-ai">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+            </div>
+            <div class="message-content"><div class="ai-text"></div></div>
+        </div>
+    </template>
+
+    <template id="tpl-loading">
+        <div class="message loading-msg">
+            <div class="message-avatar avatar-ai">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+            </div>
+            <div class="message-content">
+                <div class="typing-indicator"><span></span><span></span><span></span></div>
+            </div>
+        </div>
+    </template>
+
+    <script src="index.js?v=12"></script>
 </body>
 </html>

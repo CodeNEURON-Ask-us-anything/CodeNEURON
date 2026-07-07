@@ -95,27 +95,57 @@ def static_check(code: str, use_gemini: bool = False, api_key: str = None, langu
         
     time_complexity_big_o = "Unknown"
     complexity_improvement = "LLM required for Big-O analysis."
+    detailed_breakdown = "LLM required for detailed breakdown."
+    optimized_code = ""
     
     if use_gemini:
         try:
             model = get_gemini_model(api_key)
             if model:
                 prompt = f"""
-                Analyze the following Python code and determine its Big-O Time Complexity.
-                Then, briefly suggest how the time complexity can be improved.
-                Format your response strictly as two lines:
-                O(...)
-                Improvement: ...
+                You are an expert AI software engineer. Analyze the following code and provide a highly detailed breakdown.
+                Format your response EXACTLY like this:
+
+                BIG_O: <time complexity>
+                BREAKDOWN:
+                <a multi-paragraph detailed explanation of what the code does, its time and space complexity, and its potential bottlenecks>
+                OPTIMIZATION:
+                <a brief explanation of how to optimize it>
+                OPTIMIZED_CODE:
+                <just the raw optimized code block, without markdown formatting if possible, or using standard triple backticks>
                 
                 Code:
                 {code}
                 """
                 resp = model.generate_content(prompt)
-                lines = resp.text.strip().split('\n')
-                if lines:
-                    time_complexity_big_o = lines[0].strip()
-                    if len(lines) > 1:
-                        complexity_improvement = " ".join([l.strip() for l in lines[1:] if l.strip()]).replace("Improvement:", "").strip()
+                resp_text = resp.text.strip()
+                
+                # Simple parsing logic
+                big_o_part = resp_text.split("BREAKDOWN:")[0].replace("BIG_O:", "").strip() if "BREAKDOWN:" in resp_text else "Unknown"
+                
+                if "BREAKDOWN:" in resp_text and "OPTIMIZATION:" in resp_text:
+                    breakdown_part = resp_text.split("BREAKDOWN:")[1].split("OPTIMIZATION:")[0].strip()
+                else:
+                    breakdown_part = "Detailed breakdown unavailable."
+                    
+                if "OPTIMIZATION:" in resp_text and "OPTIMIZED_CODE:" in resp_text:
+                    opt_part = resp_text.split("OPTIMIZATION:")[1].split("OPTIMIZED_CODE:")[0].strip()
+                    opt_code_part = resp_text.split("OPTIMIZED_CODE:")[1].strip()
+                    
+                    # Clean markdown wrappers from code if present
+                    if opt_code_part.startswith("```"):
+                        opt_code_part = "\n".join(opt_code_part.split("\n")[1:])
+                    if opt_code_part.endswith("```"):
+                        opt_code_part = "\n".join(opt_code_part.split("\n")[:-1])
+                else:
+                    opt_part = "Optimization suggestions unavailable."
+                    opt_code_part = ""
+
+                time_complexity_big_o = big_o_part
+                detailed_breakdown = breakdown_part
+                complexity_improvement = opt_part
+                optimized_code = opt_code_part.strip()
+                
         except Exception as e:
             print(f"Gemini complexity analysis failed: {str(e)}")
 
@@ -125,6 +155,8 @@ def static_check(code: str, use_gemini: bool = False, api_key: str = None, langu
         "complexity": f"{complexity} (Score: {complexity_val})",
         "time_complexity_big_o": time_complexity_big_o,
         "complexity_improvement": complexity_improvement,
+        "detailed_breakdown": detailed_breakdown,
+        "optimized_code": optimized_code,
         "warnings": warnings,
         "details": details
     }

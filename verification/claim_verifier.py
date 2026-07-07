@@ -5,6 +5,7 @@ from verification.openai_verifier import verify_grounded_with_openai, batch_veri
 from verification.groq_verifier import verify_grounded_with_groq, batch_verify_grounded_with_groq
 from verification.math_verifier import evaluate_math_claim
 import re
+import os
 import concurrent.futures
 
 
@@ -57,11 +58,20 @@ def direct_matching_fallback(claim: str, evidence: str):
     return {"label": "neutral", "confidence": 0.5}
 
 
-def verify_fact(claim: str, mode: str = "nli", gemini_api_key: str = None, context: str = None):
+def _resolve_api_key(explicit_key, env_var):
+    """Helper: return an explicit key if provided, else fall back to env var."""
+    if explicit_key and explicit_key.strip():
+        return explicit_key.strip()
+    return os.environ.get(env_var, "")
+
+
+def verify_fact(claim: str, mode: str = "nli", gemini_api_key: str = None,
+                openai_api_key: str = None, groq_api_key: str = None, context: str = None):
     """
     Main claim verification router.
-    Retrieves web-grounded search evidence from Wikipedia first.
-    Performs verification using either local NLI pipeline or RAG grounded Gemini 1.5 Flash.
+    Retrieves web-grounded search evidence first.
+    Performs verification using either local NLI pipeline or cloud-based multi-agent consensus.
+    API keys are resolved from explicit arguments first, then environment variables.
     """
     # 0. Check if it's a mathematical calculation
     math_result = evaluate_math_claim(claim)
@@ -78,45 +88,63 @@ def verify_fact(claim: str, mode: str = "nli", gemini_api_key: str = None, conte
     # 1. Retrieval Web-Grounded Search
     evidence_list = get_evidence_for_claim(resolved_claim)
 
-    # 1. Cloud-based Multi-Agent Consensus Mode
+    # Resolve all API keys (explicit > env var)
+    resolved_gemini_key = _resolve_api_key(gemini_api_key, "GEMINI_API_KEY")
+    resolved_openai_key = _resolve_api_key(openai_api_key, "OPENAI_API_KEY")
+    resolved_groq_key = _resolve_api_key(groq_api_key, "GROQ_API_KEY")
+
+    # 2. Cloud-based Multi-Agent Consensus Mode
     if mode == "gemini":
-        # Launch verification across all three models concurrently
-        results = []
+        # Only launch models that have a valid API key configured
+        futures = {}
         with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-            future_to_model = {
-                executor.submit(verify_grounded_with_gemini, resolved_claim, evidence_list, gemini_api_key): "Gemini",
-                executor.submit(verify_grounded_with_openai, resolved_claim, evidence_list, None): "OpenAI",
-                executor.submit(verify_grounded_with_groq, resolved_claim, evidence_list, None): "Groq"
-            }
-            for future in concurrent.futures.as_completed(future_to_model):
+            if resolved_gemini_key:
+                futures[executor.submit(verify_grounded_with_gemini, resolved_claim, evidence_list, resolved_gemini_key)] = "Gemini"
+            if resolved_openai_key:
+                futures[executor.submit(verify_grounded_with_openai, resolved_claim, evidence_list, resolved_openai_key)] = "OpenAI"
+            if resolved_groq_key:
+                futures[executor.submit(verify_grounded_with_groq, resolved_claim, evidence_list, resolved_groq_key)] = "Groq"
+
+            results = []
+            model_names_used = []
+            for future in concurrent.futures.as_completed(futures):
+                model_name = futures[future]
                 try:
                     res = future.result()
-                    # Ignore models that failed or weren't configured
-                    if res["verdict"] in ["SUPPORTED", "CONTRADICTED"]:
-                        results.append(res)
-                    elif res["verdict"] == "NOT_ENOUGH_INFO" and "configured" not in res.get("explanation", ""):
-                        results.append(res)
-                except Exception as exc:
+                    if res.get("verdict") not in ["ERROR", None]:
+                        # Skip "not configured" responses (shouldn't happen now, but safety net)
+                        if "not configured" not in res.get("explanation", "").lower():
+                            results.append(res)
+                            model_names_used.append(model_name)
+                except Exception:
                     pass
-        
+
+        # If no cloud models were available at all, fall back to local NLI silently
+        if not results:
+            print("No cloud API keys configured. Falling back to local NLI for verification.")
+            return verify_fact(claim=claim, mode="nli", context=context)
+
         # Majority Vote Logic
         verdict_counts = {"SUPPORTED": 0, "CONTRADICTED": 0, "NOT_ENOUGH_INFO": 0}
         total_confidence = 0
         explanations = []
         
         for r in results:
-            verdict_counts[r["verdict"]] += 1
+            v = r["verdict"]
+            if v in verdict_counts:
+                verdict_counts[v] += 1
             total_confidence += r["confidence"]
             explanations.append(r["explanation"])
             
-        if results:
-            final_verdict = max(verdict_counts, key=verdict_counts.get)
-            final_confidence = total_confidence / len(results)
-            final_explanation = "Consensus: " + " | ".join(explanations)
+        final_verdict = max(verdict_counts, key=verdict_counts.get)
+        final_confidence = total_confidence / len(results)
+
+        # Clean explanation: show which models agreed
+        if len(results) == 1:
+            final_explanation = explanations[0]
         else:
-            final_verdict = "NOT_ENOUGH_INFO"
-            final_confidence = 0.3
-            final_explanation = "No AI models were able to verify this claim (API keys missing or failed)."
+            models_str = ", ".join(model_names_used)
+            final_explanation = f"Verified by {models_str}. {explanations[0]}"
 
         best_ev = evidence_list[0] if evidence_list else None
         return {
@@ -130,7 +158,7 @@ def verify_fact(claim: str, mode: str = "nli", gemini_api_key: str = None, conte
             "explanation": final_explanation
         }
 
-    # 2. Local NLI pipeline Mode
+    # 3. Local NLI pipeline Mode
     candidates = []
 
     for ev in evidence_list:
@@ -204,7 +232,8 @@ def verify_fact(claim: str, mode: str = "nli", gemini_api_key: str = None, conte
         "explanation": explanation
     }
 
-def batch_verify_facts(claims: list, mode: str = "nli", gemini_api_key: str = None, context: str = None):
+def batch_verify_facts(claims: list, mode: str = "nli", gemini_api_key: str = None,
+                       openai_api_key: str = None, groq_api_key: str = None, context: str = None):
     """
     Batched claim verification router.
     Resolves pronouns, retrieves evidence sequentially, and dispatches batch LLM verifications.
@@ -212,6 +241,11 @@ def batch_verify_facts(claims: list, mode: str = "nli", gemini_api_key: str = No
     """
     if not claims:
         return []
+
+    # Resolve all API keys once at the top
+    resolved_gemini_key = _resolve_api_key(gemini_api_key, "GEMINI_API_KEY")
+    resolved_openai_key = _resolve_api_key(openai_api_key, "OPENAI_API_KEY")
+    resolved_groq_key = _resolve_api_key(groq_api_key, "GROQ_API_KEY")
 
     claims_data = []
     
@@ -248,20 +282,27 @@ def batch_verify_facts(claims: list, mode: str = "nli", gemini_api_key: str = No
     if mode == "gemini" and llm_indices:
         llm_claims_data = [{"claim": claims_data[i]["resolved_claim"], "evidence_list": claims_data[i]["evidence_list"]} for i in llm_indices]
         
+        # Only launch models that have API keys configured
+        futures = {}
         with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-            future_to_model = {
-                executor.submit(batch_verify_grounded_with_gemini, llm_claims_data, gemini_api_key): "Gemini",
-                executor.submit(batch_verify_grounded_with_openai, llm_claims_data, None): "OpenAI",
-                executor.submit(batch_verify_grounded_with_groq, llm_claims_data, None): "Groq"
-            }
-            
+            if resolved_gemini_key:
+                futures[executor.submit(batch_verify_grounded_with_gemini, llm_claims_data, resolved_gemini_key)] = "Gemini"
+            if resolved_openai_key:
+                futures[executor.submit(batch_verify_grounded_with_openai, llm_claims_data, resolved_openai_key)] = "OpenAI"
+            if resolved_groq_key:
+                futures[executor.submit(batch_verify_grounded_with_groq, llm_claims_data, resolved_groq_key)] = "Groq"
+
             all_model_results = []
-            for future in concurrent.futures.as_completed(future_to_model):
+            model_names_used = []
+            for future in concurrent.futures.as_completed(futures):
+                model_name = futures[future]
                 try:
                     res_list = future.result()
-                    # Filter out ERROR responses (e.g., API key missing)
-                    if res_list and res_list[0].get("verdict") != "ERROR":
-                        all_model_results.append(res_list)
+                    # Filter out ERROR responses or "not configured" responses
+                    if res_list and res_list[0].get("verdict") not in ["ERROR", None]:
+                        if "not configured" not in res_list[0].get("explanation", "").lower():
+                            all_model_results.append(res_list)
+                            model_names_used.append(model_name)
                 except Exception:
                     pass
 
@@ -274,13 +315,21 @@ def batch_verify_facts(claims: list, mode: str = "nli", gemini_api_key: str = No
                 
                 for model_res in all_model_results:
                     r = model_res[j]
-                    verdict_counts[r["verdict"]] += 1
+                    v = r["verdict"]
+                    if v in verdict_counts:
+                        verdict_counts[v] += 1
                     total_confidence += r["confidence"]
                     explanations.append(r["explanation"])
                     
                 final_verdict = max(verdict_counts, key=verdict_counts.get)
                 final_confidence = total_confidence / len(all_model_results)
-                final_explanation = "Consensus: " + " | ".join(explanations)
+                
+                # Clean explanation
+                if len(all_model_results) == 1:
+                    final_explanation = explanations[0]
+                else:
+                    models_str = ", ".join(model_names_used)
+                    final_explanation = f"Verified by {models_str}. {explanations[0]}"
                 
                 best_ev = claims_data[original_idx]["evidence_list"][0] if claims_data[original_idx]["evidence_list"] else None
                 final_results[original_idx] = {
@@ -294,8 +343,8 @@ def batch_verify_facts(claims: list, mode: str = "nli", gemini_api_key: str = No
                     "explanation": final_explanation
                 }
         else:
-            # All cloud models failed (e.g. 429 errors or no API keys). Fallback to NLI!
-            print("Batch verification: Cloud models failed or not configured. Falling back to local NLI.")
+            # All cloud models failed or no keys. Fallback to NLI silently.
+            print("Batch verification: No cloud API keys configured. Falling back to local NLI.")
 
     # Fill in NLI results for any remaining indices (either mode is nli, or cloud fallback)
     for i, data in enumerate(claims_data):

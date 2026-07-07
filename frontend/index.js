@@ -1,815 +1,299 @@
-// CodeNeuron SPA Controller
+const API_BASE = 'http://127.0.0.1:8000/api';
 
-document.addEventListener("DOMContentLoaded", () => {
-    // ---- DOM Element Selectors ----
-    const aiInputVerify = document.getElementById("ai-answer-input");
-    const codeDirectInput = document.getElementById("code-direct-input");
-    let currentInputMode = "verify";
-    
-    const btnVerify = document.getElementById("btn-verify");
-    const btnClear = document.getElementById("btn-clear");
-    const btnDemo = document.getElementById("btn-demo-data");
-    const btnExport = document.getElementById("btn-export-pdf");
-    
-    const progressCard = document.getElementById("progress-card");
-    const resultsCard = document.getElementById("results-card");
-    const dashboardCard = document.getElementById("dashboard-card");
-    const historyList = document.getElementById("history-list");
-    
-    // Progress Pipeline Steps
-    const steps = {
-        ingest: document.getElementById("step-ingest"),
-        chunk: document.getElementById("step-chunk"),
-        search: document.getElementById("step-search"),
-        verify: document.getElementById("step-verify"),
-        sandbox: document.getElementById("step-sandbox"),
-        aggregate: document.getElementById("step-aggregate")
-    };
+// DOM Elements
+const promptInput = document.getElementById('prompt-input');
+const btnSubmit = document.getElementById('btn-submit');
+const chatContainer = document.getElementById('chat-container');
+const welcomeScreen = document.getElementById('welcome-screen');
+const mainScroll = document.getElementById('main-scroll');
+const apiKeyInput = document.getElementById('gemini-api-key');
+const modeSelect = document.getElementById('verification-mode');
 
-    // Results Dashboard Metrics
-    const trustPercentText = document.getElementById("trust-percentage");
-    const scoreCircle = document.getElementById("score-circle");
-    const reportTitle = document.getElementById("report-summary-title");
-    const reportText = document.getElementById("report-summary-text");
-    const reportBreakdown = document.getElementById("report-breakdown");
-    const verdictBadge = document.getElementById("verdict-badge");
-    
-    // Tabs Navigation
-    const tabButtons = document.querySelectorAll(".tab-btn");
-    const tabContents = document.querySelectorAll(".tab-content");
-    
-    // Prose Highlight Elements
-    const proseHighlightedText = document.getElementById("prose-highlighted-text");
-    const evidenceDrawer = document.getElementById("evidence-drawer");
-    
-    // Code Inspection Elements
-    const codeBlocksList = document.getElementById("code-blocks-list");
-    const codeInspectorPanel = document.getElementById("code-inspector-panel");
-    const codeInspectorContent = document.getElementById("code-inspector-content");
-    const codeEmptyState = document.getElementById("code-empty-state");
-    
-    // Raw JSON Display
-    const rawJsonDisplay = document.getElementById("raw-json-display");
-    
-    // Active States Cache
-    let currentReport = null;
-    let selectedClaimIndex = null;
-    let selectedCodeIndex = 0;
+// Templates
+const tplUserMsg = document.getElementById('tpl-user-msg');
+const tplAiMsg = document.getElementById('tpl-ai-msg');
+const tplLoading = document.getElementById('tpl-loading');
 
-    // ---- Demo AI Answer Example ----
-    const DEMO_EXAMPLE = `Python uses the Timsort algorithm for sorting lists, which combines merge sort and insertion sort.
-However, the capital city of Australia is Sydney, which is the most populous city in the country.
+// --- Auto-expand Textarea ---
+promptInput.addEventListener('input', () => {
+    promptInput.style.height = 'auto';
+    promptInput.style.height = Math.min(promptInput.scrollHeight, 200) + 'px';
+});
 
-\`\`\`python
-def fibonacci(n):
-    if n <= 0:
-        return []
-    elif n == 1:
-        return [0]
-    elif n == 2:
-        return [0, 1]
-    
-    seq = [0, 1]
-    for i in range(2, n):
-        seq.append(seq[-1] + seq[-2])
-    return seq
-\`\`\`
-
-Additionally, Python allows running shell tasks directly. The following code is unsafe and shouldn't be executed:
-
-\`\`\`python
-import os
-import subprocess
-# This is blocked by the CodeNeuron sandbox
-os.system("echo Unsafe Operations Triggered")
-open("hacked.txt", "w").write("test")
-\`\`\``;
-
-    // ---- Event Listeners ----
-    
-    // Clear Input
-    btnClear.addEventListener("click", () => {
-        aiInputVerify.value = "";
-        resetVerificationStates();
-    });
-    
-    // Load Demo Data
-    btnDemo.addEventListener("click", () => {
-        aiInputVerify.value = DEMO_EXAMPLE;
-    });
-    
-    // Export PDF Report
-    btnExport.addEventListener("click", () => {
-        window.print();
-    });
-    
-    // Tab switching routing
-    tabButtons.forEach(btn => {
-        btn.addEventListener("click", () => {
-            const targetTab = btn.getAttribute("data-tab");
-            
-            tabButtons.forEach(b => b.classList.remove("active"));
-            tabContents.forEach(c => c.classList.remove("active"));
-            
-            btn.classList.add("active");
-            document.getElementById(targetTab).classList.add("active");
-        });
-    });
-
-    // Copy to clipboard helper
-    function setupCopyButton(btnId, targetSelector, isCodeElement = false) {
-        const btn = document.getElementById(btnId);
-        if (!btn) return;
-        btn.addEventListener("click", () => {
-            const target = document.querySelector(targetSelector);
-            if (!target) return;
-            const textToCopy = isCodeElement ? target.textContent : target.innerText;
-            navigator.clipboard.writeText(textToCopy).then(() => {
-                const originalText = btn.textContent;
-                btn.textContent = "✅ Copied!";
-                btn.style.color = "var(--color-green)";
-                setTimeout(() => {
-                    btn.textContent = originalText;
-                    btn.style.color = "";
-                }, 2000);
-            }).catch(err => {
-                console.error("Copy failed", err);
-            });
-        });
-    }
-
-    setupCopyButton("btn-copy-prose", "#prose-highlighted-text");
-    setupCopyButton("btn-copy-code", "#code-source-display", true);
-    setupCopyButton("btn-copy-json", "#raw-json-display", true);
-
-    // Toggle input modes (Verify AI Output vs Ask Direct Question)
-    const btnToggleVerify = document.getElementById("toggle-verify-mode");
-    const btnToggleAsk = document.getElementById("toggle-ask-mode");
-    const inputTitle = document.getElementById("input-title");
-    
-    if (btnToggleVerify && btnToggleAsk) {
-        btnToggleVerify.addEventListener("click", () => {
-            btnToggleVerify.classList.add("active");
-            btnToggleAsk.classList.remove("active");
-            inputTitle.textContent = "Raw AI Output Input";
-            aiInputVerify.placeholder = "Paste the AI-generated answer here, mixing prose explanations and python code blocks (in ```python...``` blocks)...";
-            currentInputMode = "verify";
-        });
-        
-        btnToggleAsk.addEventListener("click", () => {
-            btnToggleAsk.classList.add("active");
-            btnToggleVerify.classList.remove("active");
-            inputTitle.textContent = "Ask CodeNeuron (AI Assistant)";
-            aiInputVerify.placeholder = "Ask a direct question here... (e.g. 'What is the capital of Australia?', 'Write a function to sort an array')";
-            currentInputMode = "ask";
-        });
-    }
-
-    // Real-time History Filtering
-    const historySearchInput = document.getElementById("history-search");
-    let loadedHistory = [];
-
-    historySearchInput.addEventListener("input", () => {
-        const query = historySearchInput.value.toLowerCase().trim();
-        const filteredHistory = loadedHistory.filter(entry => {
-            return (
-                entry.source_model.toLowerCase().includes(query) ||
-                entry.metrics.overall_verdict.toLowerCase().includes(query) ||
-                entry.mode_selected.toLowerCase().includes(query) ||
-                (entry.generated_answer && entry.generated_answer.toLowerCase().includes(query)) ||
-                (entry.original_prompt && entry.original_prompt.toLowerCase().includes(query))
-            );
-        });
-        renderHistoryList(filteredHistory);
-    });
-
-    // Clear History Database locally & memory
-    const btnClearHistory = document.getElementById("btn-clear-history");
-    btnClearHistory.addEventListener("click", () => {
-        if (confirm("Are you sure you want to clear the analysis history? This cannot be undone.")) {
-            // Delete history JSON entries
-            loadedHistory = [];
-            renderHistoryList([]);
-            resetVerificationStates();
-        }
-    });
-    
-    // Run Core Full-Stack Analysis
-    btnVerify.addEventListener("click", triggerAnalysis);
-
-    // ---- Code Verifier Panel Logic ----
-    const codeLanguageSelect = document.getElementById("code-language-select");
-    const btnVerifyCode = document.getElementById("btn-verify-code");
-    const btnClearCode = document.getElementById("btn-clear-code");
-    const codeLineNumbers = document.getElementById("code-line-numbers");
-
-    // Update line numbers in the gutter
-    function updateLineNumbers() {
-        if (!codeDirectInput || !codeLineNumbers) return;
-        const lineCount = (codeDirectInput.value || "").split("\n").length;
-        codeLineNumbers.innerHTML = "";
-        for (let i = 1; i <= Math.max(lineCount, 1); i++) {
-            const span = document.createElement("span");
-            span.textContent = i;
-            codeLineNumbers.appendChild(span);
-        }
-    }
-
-    if (codeDirectInput) {
-        codeDirectInput.addEventListener("input", updateLineNumbers);
-        codeDirectInput.addEventListener("scroll", () => {
-            codeLineNumbers.style.transform = `translateY(-${codeDirectInput.scrollTop}px)`;
-        });
-        // Tab key inserts 4 spaces instead of moving focus
-        codeDirectInput.addEventListener("keydown", (e) => {
-            if (e.key === "Tab") {
-                e.preventDefault();
-                const start = codeDirectInput.selectionStart;
-                const end = codeDirectInput.selectionEnd;
-                codeDirectInput.value = codeDirectInput.value.substring(0, start) + "    " + codeDirectInput.value.substring(end);
-                codeDirectInput.selectionStart = codeDirectInput.selectionEnd = start + 4;
-                updateLineNumbers();
-            }
-        });
-        updateLineNumbers();
-    }
-
-    if (btnClearCode) {
-        btnClearCode.addEventListener("click", () => {
-            codeDirectInput.value = "";
-            updateLineNumbers();
-        });
-    }
-
-    if (btnVerifyCode) {
-        btnVerifyCode.addEventListener("click", async () => {
-            const code = codeDirectInput.value ? codeDirectInput.value.trim() : "";
-            if (!code) {
-                alert("Please paste code into the Code Verifier panel.");
-                return;
-            }
-
-            resetVerificationStates();
-            progressCard.classList.remove("hidden");
-            btnVerifyCode.setAttribute("disabled", "true");
-            btnVerifyCode.textContent = "⏳ Verifying...";
-
-            // Pipeline animation
-            updateProgressStep("ingest", "active");
-            setTimeout(() => updateProgressStep("chunk", "active"), 300);
-            setTimeout(() => updateProgressStep("sandbox", "active"), 600);
-            setTimeout(() => updateProgressStep("verify", "active"), 900);
-            setTimeout(() => updateProgressStep("aggregate", "active"), 1200);
-
-            try {
-                const response = await fetch("/api/verify-code", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        code: code,
-                        language: codeLanguageSelect ? codeLanguageSelect.value : "python",
-                        source_model: document.getElementById("source-model")?.value || "User",
-                        gemini_api_key: document.getElementById("gemini-api-key")?.value || ""
-                    })
-                });
-
-                if (response.ok) {
-                    const report = await response.json();
-                    currentReport = report;
-                    Object.keys(steps).forEach(key => updateProgressStep(key, "done"));
-
-                    setTimeout(() => {
-                        progressCard.classList.add("hidden");
-                        btnVerifyCode.removeAttribute("disabled");
-                        btnVerifyCode.innerHTML = "▶ Verify Code";
-                        btnExport.removeAttribute("disabled");
-                        renderReportDashboard(report);
-
-                        // Auto-switch to code tab
-                        tabButtons.forEach(b => b.classList.remove("active"));
-                        tabContents.forEach(c => c.classList.remove("active"));
-                        const codeTab = document.querySelector('[data-tab="tab-code"]');
-                        if (codeTab) {
-                            codeTab.classList.add("active");
-                            document.getElementById("tab-code").classList.add("active");
-                        }
-
-                        loadHistoryList();
-                    }, 600);
-                } else {
-                    const err = await response.json();
-                    alert(`Code Verification Failed: ${err.detail || "Server Error"}`);
-                    btnVerifyCode.removeAttribute("disabled");
-                    btnVerifyCode.innerHTML = "▶ Verify Code";
-                    progressCard.classList.add("hidden");
-                }
-            } catch (e) {
-                console.error("Code verification call failure", e);
-                alert("Failed to reach server. Ensure FastAPI backend is running on port 8000.");
-                btnVerifyCode.removeAttribute("disabled");
-                btnVerifyCode.innerHTML = "▶ Verify Code";
-                progressCard.classList.add("hidden");
-            }
-        });
-    }
-
-    // Boot Database Load
-    loadHistoryList();
-
-    // ---- Functions ----
-
-    function resetVerificationStates() {
-        progressCard.classList.add("hidden");
-        resultsCard.classList.add("hidden");
-        dashboardCard.classList.add("hidden");
-        btnExport.setAttribute("disabled", "true");
-        currentReport = null;
-    }
-
-    async function loadHistoryList() {
-        try {
-            const res = await fetch("/api/history");
-            if (res.ok) {
-                const history = await res.json();
-                loadedHistory = history;
-                renderHistoryList(history);
-            }
-        } catch (e) {
-            console.error("Failed loading verification history", e);
-        }
-    }
-
-    function renderHistoryList(history) {
-        historyList.innerHTML = "";
-        if (!history || history.length === 0) {
-            historyList.innerHTML = `<div class="empty-history">No past analyses found.</div>`;
-            return;
-        }
-
-        history.forEach((entry, idx) => {
-            const date = new Date(entry.timestamp);
-            const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            
-            const badgeClass = entry.metrics.overall_verdict;
-            const item = document.createElement("div");
-            item.className = `history-item ${currentReport && currentReport.id === entry.id ? 'active' : ''}`;
-            
-            const titleText = entry.original_prompt ? entry.original_prompt : "Verified Output";
-        
-            item.innerHTML = `
-                <div class="history-header">
-                    <span>${timeStr}</span>
-                    <span class="history-engine">${entry.mode_selected.toUpperCase()}</span>
-                </div>
-                <div class="history-model">${entry.source_model}</div>
-                <div class="history-score-row">
-                    <span class="badge ${badgeClass}">${entry.metrics.overall_verdict}</span>
-                    <span style="font-weight:600; font-size:12px;">${entry.metrics.score_percentage}%</span>
-                </div>
-                <div style="font-size: 11px; margin-top: 4px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                    ${titleText}
-                </div>
-            `;
-            
-            item.addEventListener("click", () => {
-                // Instantly restore dashboard results representation
-                document.querySelectorAll(".history-item").forEach(item => item.classList.remove("active"));
-                item.classList.add("active");
-                currentReport = entry;
-                renderReportDashboard(entry);
-            });
-            
-            historyList.appendChild(item);
-        });
-    }
-
-    async function triggerAnalysis() {
-        let text = aiInputVerify.value ? aiInputVerify.value.trim() : "";
-        if (!text) {
-            alert("Please paste an AI answer or ask a question to verify.");
-            return;
-        }
-        
-        resetVerificationStates();
-        progressCard.classList.remove("hidden");
-        btnVerify.setAttribute("disabled", "true");
-        
-        // 1. Ingest Progress Update
-        updateProgressStep("ingest", "active");
-        
-        const payload = {
-            answer: text,
-            source_model: document.getElementById("source-model")?.value || "DirectInput",
-            mode: document.getElementById("verification-mode")?.value || "gemini",
-            gemini_api_key: document.getElementById("gemini-api-key")?.value || "",
-            input_type: currentInputMode
-        };
-        
-        // Pipeline transitions timing simulator to match REST steps
-        setTimeout(() => updateProgressStep("chunk", "active"), 400);
-        setTimeout(() => updateProgressStep("search", "active"), 800);
-        setTimeout(() => updateProgressStep("verify", "active"), 1200);
-        setTimeout(() => updateProgressStep("sandbox", "active"), 1600);
-        setTimeout(() => updateProgressStep("aggregate", "active"), 2000);
-        
-        try {
-            const response = await fetch("/api/verify", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(payload)
-            });
-            
-            if (response.ok) {
-                const report = await response.json();
-                currentReport = report;
-                
-                // Complete all steps
-                Object.keys(steps).forEach(key => updateProgressStep(key, "done"));
-                
-                setTimeout(() => {
-                    progressCard.classList.add("hidden");
-                    btnVerify.removeAttribute("disabled");
-                    btnExport.removeAttribute("disabled");
-                    
-                    renderReportDashboard(report);
-                    loadHistoryList(); // reload logs sidebar
-                }, 800);
-            } else {
-                const err = await response.json();
-                let errorMsg = err.detail || "Server Error";
-                if (typeof errorMsg === 'object') {
-                    errorMsg = JSON.stringify(errorMsg);
-                }
-                alert(`Analysis Failed: ${errorMsg}`);
-                btnVerify.removeAttribute("disabled");
-                progressCard.classList.add("hidden");
-            }
-        } catch (e) {
-            console.error("HTTP verification call failure", e);
-            alert("Failed to reach server. Ensure FastAPI backend is running locally on port 8000.");
-            btnVerify.removeAttribute("disabled");
-            progressCard.classList.add("hidden");
-        }
-    }
-
-    function updateProgressStep(stepName, state) {
-        const element = steps[stepName];
-        if (!element) return;
-        
-        // Clear old classes
-        element.className = "pipeline-step";
-        
-        const statusBox = element.querySelector(".step-status");
-        
-        if (state === "active") {
-            element.classList.add("active");
-            statusBox.innerHTML = `<span class="step-spinner"></span>`;
-        } else if (state === "done") {
-            element.classList.add("done");
-            statusBox.innerHTML = `<span class="step-bullet" style="background:#50fa7b; box-shadow:0 0 10px #50fa7b"></span>`;
-        } else {
-            statusBox.innerHTML = `<span class="step-bullet"></span>`;
-        }
-    }
-
-    function renderReportDashboard(report) {
-        // Show components
-        resultsCard.classList.remove("hidden");
-        dashboardCard.classList.remove("hidden");
-        
-        const m = report.metrics;
-        
-        // 1. Render radial SVG confidence rating
-        const percentage = m.score_percentage;
-        trustPercentText.textContent = `${percentage}%`;
-        
-        // Circular progress circumference = 2 * PI * r = 2 * 3.1416 * 50 = 314.16
-        const offset = 314.16 - (percentage / 100) * 314.16;
-        scoreCircle.style.strokeDashoffset = offset;
-        
-        // Set stroke color based on verdict rating HSL
-        let strokeColor = "#bd93f9"; // fallback purple
-        if (m.overall_verdict === "UNSAFE") {
-            strokeColor = "#ffb86c"; // orange warning
-        } else if (percentage >= 80) {
-            strokeColor = "#50fa7b"; // green
-        } else if (percentage >= 50) {
-            strokeColor = "#ffb86c"; // orange suspicious
-        } else {
-            strokeColor = "#ff5555"; // red untrustworthy
-        }
-        scoreCircle.style.stroke = strokeColor;
-        
-        // 2. Render report assessments text
-        reportTitle.textContent = m.summary;
-        let reportTextContent = `Analysis conducted via CodeNeuron ${report.mode_selected.toUpperCase()} engine. Source LLM: ${report.source_model}.`;
-        
-        // Render the generated answer properly
-        const genAnsSection = document.getElementById("generated-answer-section");
-        const genAnsContent = document.getElementById("generated-answer-content");
-        if (report.generated_answer) {
-            genAnsSection.style.display = "block";
-            // Use marked.js to render Markdown
-            genAnsContent.innerHTML = marked.parse(report.generated_answer);
-            if (window.MathJax) {
-                MathJax.typesetPromise([genAnsContent]).catch(err => console.log('MathJax error: ', err));
-            }
-        } else {
-            genAnsSection.style.display = "none";
-        }
-
-        reportText.textContent = reportTextContent;
-        reportBreakdown.textContent = m.breakdown;
-        
-        // Verdict Badge
-        verdictBadge.className = `badge ${m.overall_verdict}`;
-        verdictBadge.textContent = m.overall_verdict;
-
-        // 3. Update top dynamic widget panel cards
-        const proseStats = document.getElementById("widget-prose-stats");
-        const proseProgress = document.getElementById("widget-prose-progress");
-        const codeStats = document.getElementById("widget-code-stats");
-        const codeProgress = document.getElementById("widget-code-progress");
-        const credibilityScore = document.getElementById("widget-credibility-score");
-        const credibilityBadge = document.getElementById("widget-credibility-badge");
-        const credibilityProgress = document.getElementById("widget-credibility-progress");
-        const sourceStats = document.getElementById("widget-source-stats");
-        const sourceProgress = document.getElementById("widget-source-progress");
-
-        if (proseStats && proseProgress) {
-            proseStats.textContent = `${m.metrics.prose_supported} / ${m.metrics.prose_total}`;
-            const ratio = m.metrics.prose_total > 0 ? (m.metrics.prose_supported / m.metrics.prose_total) * 100 : 100;
-            proseProgress.style.width = `${ratio}%`;
-        }
-
-        if (codeStats && codeProgress) {
-            codeStats.textContent = `${m.metrics.code_total} Block(s)`;
-            const codeRatio = m.metrics.code_total > 0 ? (m.metrics.code_passed / m.metrics.code_total) * 100 : 0;
-            codeProgress.style.width = `${m.metrics.code_total > 0 ? 100 : 0}%`;
-            codeProgress.style.background = m.metrics.code_unsafe > 0 ? "var(--color-red)" : "var(--color-green)";
-        }
-
-        if (credibilityScore && credibilityBadge && credibilityProgress) {
-            credibilityScore.textContent = `${percentage}%`;
-            credibilityBadge.className = `badge ${m.overall_verdict}`;
-            credibilityBadge.textContent = m.overall_verdict;
-            credibilityProgress.style.width = `${percentage}%`;
-            credibilityProgress.style.background = strokeColor;
-        }
-
-        // Count unique reference sources in chunks
-        const uniqueSources = new Set();
-        report.chunks.forEach(c => {
-            if (c.evidence && c.evidence.source) {
-                uniqueSources.add(c.evidence.source);
-            }
-        });
-        if (sourceStats && sourceProgress) {
-            sourceStats.textContent = `${uniqueSources.size} Site(s)`;
-            sourceProgress.style.width = `${uniqueSources.size > 0 ? Math.min(100, uniqueSources.size * 25) : 0}%`;
-        }
-        
-        // 4. Render sentence highlights (Prose Factual audit)
-        renderProseHighlights(report.chunks);
-        
-        // 5. Render Sandboxed Code Sandboxes Tab
-        renderCodeSandbox(report.chunks);
-        
-        // 6. Render Raw telemetry JSON
-        rawJsonDisplay.textContent = JSON.stringify(report, null, 4);
-
-        // Typeset all math in the prose highlighted text container
-        if (window.MathJax) {
-            MathJax.typesetPromise([proseHighlightedText]).catch(err => console.log('MathJax error: ', err));
-        }
-    }
-
-    function renderProseHighlights(chunks) {
-        proseHighlightedText.innerHTML = "";
-        
-        // Reset evidence drawer elements
-        evidenceDrawer.querySelector(".empty-drawer-state").classList.remove("hidden");
-        evidenceDrawer.querySelector(".drawer-content").classList.add("hidden");
-        selectedClaimIndex = null;
-        
-        let proseFound = false;
-        
-        chunks.forEach((c, idx) => {
-            if (c.type === "prose") {
-                proseFound = true;
-                const span = document.createElement("span");
-                span.className = `claim-highlighter ${c.verdict}`;
-                span.innerHTML = c.content + " ";
-                span.setAttribute("data-index", idx);
-                
-                span.addEventListener("click", () => {
-                    document.querySelectorAll(".claim-highlighter").forEach(s => s.classList.remove("selected"));
-                    span.classList.add("selected");
-                    selectedClaimIndex = idx;
-                    revealEvidenceDrawer(c);
-                });
-                
-                proseHighlightedText.appendChild(span);
-            } else if (c.type === "code") {
-                // Visual markdown block spacing for readabilities
-                const codePre = document.createElement("pre");
-                codePre.className = "code-block-container";
-                codePre.style.margin = "12px 0";
-                codePre.innerHTML = `<code style="font-family:'Fira Code', monospace; color:#f0f3fa; font-size:12px;"># Code Block Blocked/Isolated\n${c.code.substring(0, 100)}...</code>`;
-                proseHighlightedText.appendChild(codePre);
-            }
-        });
-        
-        if (!proseFound) {
-            proseHighlightedText.innerHTML = `<div class="empty-drawer-state">No factual prose claims were routed in this AI response.</div>`;
-        }
-    }
-
-    function revealEvidenceDrawer(claimChunk) {
-        evidenceDrawer.querySelector(".empty-drawer-state").classList.add("hidden");
-        const drawerContent = evidenceDrawer.querySelector(".drawer-content");
-        drawerContent.classList.remove("hidden");
-        
-        // Fill drawer elements
-        document.getElementById("evidence-verdict").className = `badge ${claimChunk.verdict}`;
-        document.getElementById("evidence-verdict").textContent = claimChunk.verdict;
-        document.getElementById("evidence-claim-text").textContent = `"${claimChunk.content}"`;
-        document.getElementById("evidence-explanation-text").textContent = claimChunk.explanation || "No explanation provided.";
-        
-        const ev = claimChunk.evidence;
-        if (ev) {
-            document.getElementById("evidence-source-text").textContent = ev.text;
-            
-            // Recompute dynamic keywords relevance score display
-            const relevancePercentage = Math.round(claimChunk.confidence * 100);
-            document.getElementById("evidence-relevance-pill").textContent = `Assessment Confidence: ${relevancePercentage}%`;
-            
-            const sourceUrl = document.getElementById("evidence-source-url");
-            sourceUrl.href = claimChunk.source_link || ev.source;
-            sourceUrl.textContent = "View Exact Source Page \u2192";
-            sourceUrl.classList.remove("hidden");
-            
-            if (document.getElementById("evidence-exact-quote")) {
-                document.getElementById("evidence-exact-quote").textContent = claimChunk.exact_quote || ev.text;
-            }
-        } else {
-            document.getElementById("evidence-source-text").textContent = "No external documents retrieved containing aligned claims.";
-            document.getElementById("evidence-relevance-pill").textContent = "Assessment Confidence: 30%";
-            document.getElementById("evidence-source-url").classList.add("hidden");
-            if (document.getElementById("evidence-exact-quote")) {
-                document.getElementById("evidence-exact-quote").textContent = "N/A";
-            }
-        }
-    }
-
-    function renderCodeSandbox(chunks) {
-        codeBlocksList.innerHTML = "";
-        
-        const codeChunks = chunks.filter(c => c.type === "code");
-        
-        if (codeChunks.length === 0) {
-            codeEmptyState.classList.remove("hidden");
-            codeInspectorContent.classList.add("hidden");
-            return;
-        }
-        
-        codeEmptyState.classList.add("hidden");
-        codeInspectorContent.classList.remove("hidden");
-        
-        selectedCodeIndex = 0;
-        
-        codeChunks.forEach((c, idx) => {
-            const btn = document.createElement("div");
-            btn.className = `nav-item ${idx === selectedCodeIndex ? 'active' : ''}`;
-            
-            // Preview function def names inside button
-            let namePreview = `Code Chunk [${c.language.toUpperCase()}]`;
-            const funcMatch = c.code.match(/def\s+(\w+)/);
-            if (funcMatch) {
-                namePreview = `${funcMatch[1]}()`;
-            }
-            
-            btn.textContent = namePreview;
-            btn.addEventListener("click", () => {
-                document.querySelectorAll(".nav-item").forEach(b => b.classList.remove("active"));
-                btn.classList.add("active");
-                selectedCodeIndex = idx;
-                revealCodeInspector(c);
-            });
-            
-            codeBlocksList.appendChild(btn);
-        });
-        
-        revealCodeInspector(codeChunks[0]);
-    }
-
-    function revealCodeInspector(codeChunk) {
-        document.getElementById("code-verdict-badge").className = `badge ${codeChunk.verdict}`;
-        document.getElementById("code-verdict-badge").textContent = codeChunk.verdict;
-        
-        const sa = codeChunk.static_analysis || {};
-        const tr = codeChunk.test_results || {};
-        
-        // 1. Fill metrics cards
-        document.getElementById("metric-complexity").textContent = sa.complexity || "LOW";
-        document.getElementById("metric-lints").textContent = `${sa.lint_errors || 0} Alert(s)`;
-        document.getElementById("metric-time").textContent = tr.time || "0.00s";
-        document.getElementById("metric-security").textContent = `${sa.security_issues || 0} Alert(s)`;
-        if (document.getElementById("metric-time-complex")) {
-            document.getElementById("metric-time-complex").textContent = codeChunk.time_complexity || "N/A";
-            document.getElementById("metric-space-complex").textContent = codeChunk.space_complexity || "N/A";
-        }
-        
-        // 1.5 Render Error localization
-        const errorAlert = document.getElementById("code-error-alert");
-        const errorText = document.getElementById("code-error-text");
-        if (tr.error_line && tr.error_message) {
-            errorText.textContent = `Execution Error on Line ${tr.error_line}: ${tr.error_message}`;
-            errorAlert.classList.remove("hidden");
-        } else {
-            errorAlert.classList.add("hidden");
-        }
-        
-        // 1.6 Render Time Complexity
-        document.getElementById("code-big-o").textContent = sa.time_complexity_big_o || "O(1)";
-        document.getElementById("code-complexity-improvement").textContent = sa.complexity_improvement || "LLM required for analysis.";
-        
-        // 2. Render code display
-        document.getElementById("code-source-display").textContent = codeChunk.code;
-        
-        // 3. Render static warnings terminal console
-        const warningsTerminal = document.getElementById("code-warnings-list");
-        warningsTerminal.innerHTML = "";
-        
-        if (sa.warnings && sa.warnings.length > 0) {
-            sa.warnings.forEach(w => {
-                const line = document.createElement("div");
-                line.className = "terminal-line terminal-error";
-                line.textContent = `[SECURITY ALERT] ${w}`;
-                warningsTerminal.appendChild(line);
-            });
-        }
-        
-        if (sa.details && sa.details.length > 0) {
-            sa.details.forEach(d => {
-                const line = document.createElement("div");
-                line.className = "terminal-line terminal-warning";
-                line.textContent = `[LINT AUDIT] ${d}`;
-                warningsTerminal.appendChild(line);
-            });
-        }
-        
-        if (warningsTerminal.innerHTML === "") {
-            warningsTerminal.innerHTML = `<div class="terminal-line terminal-pass">[AST CHECKS] 0 security vulnerabilities flagged. PEP 8 line guidelines observed.</div>`;
-        }
-
-        // 4. Render testing assertion logs
-        const testsTerminal = document.getElementById("code-tests-list");
-        testsTerminal.innerHTML = "";
-        
-        if (tr.details && tr.details.length > 0) {
-            tr.details.forEach(detail => {
-                const line = document.createElement("div");
-                line.className = "terminal-line";
-                if (detail.includes("PASSED")) {
-                    line.classList.add("terminal-pass");
-                } else if (detail.includes("FAILED") || detail.includes("Error") || detail.includes("Failure")) {
-                    line.classList.add("terminal-error");
-                } else {
-                    line.classList.add("terminal-info");
-                }
-                line.textContent = `[ASSERT] ${detail}`;
-                testsTerminal.appendChild(line);
-            });
-        }
-        
-        if (testsTerminal.innerHTML === "") {
-            testsTerminal.innerHTML = `<div class="terminal-line terminal-info">[UNIT RUNNER] Syntax compilation was validated successfully.</div>`;
-        }
-
-        // 5. Render run console stdout/stderr logs
-        const termDisplay = document.getElementById("code-terminal-display");
-        termDisplay.innerHTML = "";
-        
-        let termLogs = "";
-        if (tr.stdout && tr.stdout.trim()) {
-            termLogs += `>>> STDOUT STREAM <<<\n${tr.stdout.trim()}\n\n`;
-        }
-        if (tr.stderr && tr.stderr.trim()) {
-            termLogs += `>>> STDERR/TRACEBACK STREAM <<<\n${tr.stderr.trim()}\n`;
-        }
-        
-        if (!termLogs.trim()) {
-            termLogs = "No sandboxed output generated during execution.";
-        }
-        termDisplay.textContent = termLogs;
-        
-        // 6. Render generated test suite code
-        document.getElementById("code-test-source-display").textContent = codeChunk.test_source || "# Test script generated successfully.";
-        
-        // 7. Render optimized code
-        if (document.getElementById("code-optimized-display")) {
-            document.getElementById("code-optimized-display").textContent = codeChunk.optimized_solution || "N/A";
-        }
+// --- Event Listeners ---
+promptInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        handleSubmit();
     }
 });
+btnSubmit.addEventListener('click', handleSubmit);
+
+const btnNewChat = document.getElementById('btn-new-chat');
+if (btnNewChat) {
+    btnNewChat.addEventListener('click', () => {
+        // Clear all messages except welcome screen
+        const messages = chatContainer.querySelectorAll('.message');
+        messages.forEach(msg => msg.remove());
+        if (welcomeScreen) welcomeScreen.style.display = 'block';
+    });
+}
+
+function scrollToBottom() {
+    requestAnimationFrame(() => {
+        mainScroll.scrollTop = mainScroll.scrollHeight;
+    });
+}
+
+// --- Main Chat Logic ---
+async function handleSubmit() {
+    const text = promptInput.value.trim();
+    if (!text) return;
+
+    if (welcomeScreen) welcomeScreen.style.display = 'none';
+
+    promptInput.value = '';
+    promptInput.style.height = 'auto';
+    promptInput.disabled = true;
+    btnSubmit.disabled = true;
+
+    appendUserMessage(text);
+    const loadingNode = appendLoadingIndicator();
+    scrollToBottom();
+
+    try {
+        await handleUnifiedRequest(text, loadingNode);
+    } catch (error) {
+        console.error(error);
+        loadingNode.remove();
+        appendAiMessage(`<span style="color:var(--red-verdict)">Error: ${error.message}</span>`);
+    } finally {
+        promptInput.disabled = false;
+        btnSubmit.disabled = false;
+        promptInput.focus();
+        scrollToBottom();
+    }
+}
+
+function appendUserMessage(text) {
+    const clone = tplUserMsg.content.cloneNode(true);
+    clone.querySelector('.user-text').textContent = text;
+    chatContainer.appendChild(clone);
+}
+
+function appendLoadingIndicator() {
+    const clone = tplLoading.content.cloneNode(true);
+    const node = clone.firstElementChild;
+    chatContainer.appendChild(node);
+    return node;
+}
+
+function appendAiMessage(htmlContent) {
+    const clone = tplAiMsg.content.cloneNode(true);
+    clone.querySelector('.ai-text').innerHTML = htmlContent;
+    chatContainer.appendChild(clone);
+}
+
+function badgeClass(verdict) {
+    if (['PASS', 'TRUSTWORTHY', 'SUPPORTED'].includes(verdict)) return 'success';
+    if (['FAIL', 'UNTRUSTWORTHY', 'CONTRADICTED', 'UNSAFE'].includes(verdict)) return 'danger';
+    if (['NEUTRAL', 'NOT_ENOUGH_INFO'].includes(verdict)) return 'warning';
+    return 'info';
+}
+
+// --- Unified API Handler ---
+async function handleUnifiedRequest(text, loadingNode) {
+    const payload = {
+        answer: text,
+        mode: modeSelect.value,
+        input_type: "ask",
+        skip_generation: false,
+        gemini_api_key: apiKeyInput.value.trim() || ""
+    };
+
+    const response = await fetch(`${API_BASE}/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`Server error ${response.status}: ${errText.substring(0, 200)}`);
+    }
+
+    const data = await response.json();
+    loadingNode.remove();
+
+    const chunks = data.chunks || [];
+    let fullMarkdownText = "";
+
+    if (chunks.length === 0) {
+        fullMarkdownText = data.generated_answer || data.original_prompt || text;
+    } else {
+        if (data.generated_answer && data.generated_answer !== data.original_prompt) {
+            fullMarkdownText += data.generated_answer + "\n\n";
+        }
+        // If there are chunks, we still just render them as cards but we can append them after typing.
+        // For now, let's just combine the text to type out, or if there are structural cards, we'll just show them.
+    }
+
+    // Create the message container first
+    const clone = tplAiMsg.content.cloneNode(true);
+    const contentDiv = clone.querySelector('.ai-text');
+    chatContainer.appendChild(clone);
+
+    if (fullMarkdownText) {
+        // Typewriter effect for text
+        await typeOutMarkdown(fullMarkdownText, contentDiv);
+    }
+
+    // If there are structural chunks (like Code Sandbox Results), append them instantly at the end
+    if (chunks.length > 0) {
+        let chunksHtml = '';
+        chunks.forEach(chunk => {
+            if (chunk.type === 'prose') chunksHtml += renderProseChunk(chunk);
+            else if (chunk.type === 'code') chunksHtml += renderCodeChunk(chunk);
+        });
+        if (chunksHtml) {
+            const wrapper = document.createElement('div');
+            wrapper.innerHTML = chunksHtml;
+            contentDiv.appendChild(wrapper);
+            scrollToBottom();
+        }
+    }
+}
+
+async function typeOutMarkdown(text, containerElement) {
+    let currentText = "";
+    // Speed up typing for large texts so it doesn't take forever
+    const charsPerTick = Math.max(1, Math.floor(text.length / 100)); 
+    
+    for (let i = 0; i < text.length; i += charsPerTick) {
+        currentText += text.substring(i, i + charsPerTick);
+        const html = typeof marked !== 'undefined' ? marked.parse(currentText) : currentText.replace(/\n/g, '<br>');
+        containerElement.innerHTML = `<div class="markdown-body">${html}</div>`;
+        scrollToBottom();
+        await new Promise(r => setTimeout(r, 15));
+    }
+    // Ensure final text is fully rendered
+    const finalHtml = typeof marked !== 'undefined' ? marked.parse(text) : text.replace(/\n/g, '<br>');
+    containerElement.innerHTML = `<div class="markdown-body">${finalHtml}</div>`;
+    scrollToBottom();
+}
+
+function renderProseChunk(chunk) {
+    const bc = badgeClass(chunk.verdict);
+    let h = `
+        <div class="assessment-panel">
+            <div class="assessment-header">
+                <div class="score-display">Fact Assessment <span class="badge ${bc}">${chunk.verdict}</span></div>
+            </div>
+            <p style="margin-bottom:10px"><strong>Claim:</strong> "${esc(chunk.content)}"</p>
+            <p style="color:var(--text-secondary);line-height:1.6;margin-bottom:14px">${esc(chunk.explanation || '')}</p>
+    `;
+
+    if (chunk.evidence) {
+        const evList = Array.isArray(chunk.evidence) ? chunk.evidence : [chunk.evidence];
+        h += `<h4>Live Web Sources</h4><div class="evidence-list">`;
+        evList.forEach(ev => {
+            const txt = ev.text || ev.exact_quote || 'Source snippet unavailable';
+            const src = ev.source || ev.source_link || '#';
+            h += `
+                <div class="evidence-card">
+                    <div class="evidence-text">"${esc(txt)}"</div>
+                    <a href="${src}" target="_blank" rel="noopener" class="evidence-link">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                        View Source
+                    </a>
+                </div>`;
+        });
+        h += `</div>`;
+    }
+    h += `</div>`;
+    return h;
+}
+
+function renderCodeChunk(chunk) {
+    const sa = chunk.static_analysis || {};
+    const v = chunk.verdict || 'UNKNOWN';
+    const issues = (sa.lint_errors || 0) + (sa.security_issues || 0);
+    return `
+        <div class="assessment-panel" style="border-color:rgba(139,92,246,0.3)">
+            <div class="assessment-header">
+                <div class="score-display">Code Analysis <span class="badge ${badgeClass(v)}">${v}</span></div>
+            </div>
+            <div class="metrics-row">
+                <div class="metric-box">
+                    <div class="metric-label">Time Complexity</div>
+                    <div class="metric-value" style="color:var(--accent);font-family:monospace">${sa.time_complexity_big_o || 'O(1)'}</div>
+                </div>
+                <div class="metric-box">
+                    <div class="metric-label">Complexity</div>
+                    <div class="metric-value">${sa.complexity || 'LOW'}</div>
+                </div>
+                <div class="metric-box">
+                    <div class="metric-label">Issues</div>
+                    <div class="metric-value" style="color:${issues > 0 ? 'var(--red-verdict)' : 'var(--green-verdict)'}">${issues}</div>
+                </div>
+            </div>
+            <h4>Algorithmic Breakdown</h4>
+            <p style="color:var(--text-secondary);white-space:pre-wrap;margin-bottom:20px">${sa.detailed_breakdown || 'Select Gemini mode and provide an API key for deep analysis.'}</p>
+            <h4>Optimization Strategy</h4>
+            <p style="color:var(--text-secondary);margin-bottom:14px">${sa.complexity_improvement || 'No suggestions.'}</p>
+            <h4>Optimized Code</h4>
+            <pre><code>${sa.optimized_code ? esc(sa.optimized_code) : '# No optimized code returned.'}</code></pre>
+        </div>`;
+}
+
+function esc(s) {
+    if (!s) return '';
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
+}
+
+// --- Load History on Startup ---
+async function loadChatHistory() {
+    try {
+        const response = await fetch(`${API_BASE}/history`);
+        if (!response.ok) return;
+        const historyData = await response.json();
+        
+        if (historyData && historyData.length > 0) {
+            if (welcomeScreen) welcomeScreen.style.display = 'none';
+            
+            // Limit to last 10 interactions so it doesn't get crazy long
+            const recentHistory = historyData.slice(-10);
+            
+            recentHistory.forEach(item => {
+                if (item.original_prompt) {
+                    appendUserMessage(item.original_prompt);
+                }
+                
+                let aiHtml = '';
+                if (item.generated_answer && item.generated_answer !== item.original_prompt) {
+                    const mdHtml = typeof marked !== 'undefined' ? marked.parse(item.generated_answer) : item.generated_answer.replace(/\n/g, '<br>');
+                    aiHtml += `<div class="markdown-body" style="margin-bottom:20px;">${mdHtml}</div>`;
+                }
+                
+                if (item.chunks && item.chunks.length > 0) {
+                    let chunksHtml = '';
+                    item.chunks.forEach(chunk => {
+                        if (chunk.type === 'prose') chunksHtml += renderProseChunk(chunk);
+                        else if (chunk.type === 'code') chunksHtml += renderCodeChunk(chunk);
+                    });
+                    if (chunksHtml) aiHtml += `<div>${chunksHtml}</div>`;
+                }
+                
+                if (aiHtml) {
+                    appendAiMessage(aiHtml);
+                }
+            });
+            scrollToBottom();
+        }
+    } catch (e) {
+        console.log("Could not load history", e);
+    }
+}
+
+// Initialize
+document.addEventListener("DOMContentLoaded", loadChatHistory);
