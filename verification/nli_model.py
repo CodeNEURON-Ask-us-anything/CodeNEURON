@@ -1,3 +1,7 @@
+import os
+os.environ["USE_TF"] = "0"
+os.environ["USE_TORCH"] = "1"
+
 # Global reference to pipeline, lazy-loaded on demand
 _nli_pipeline = None
 
@@ -24,9 +28,10 @@ def run_nli(premise: str, hypothesis: str):
                 f"Ensure 'transformers' and 'torch' are fully installed. Error details: {str(e)}"
             )
 
-    # Format input for BART NLI model
-    input_text = f"{premise} </s></s> {hypothesis}"
-    output = _nli_pipeline(input_text)[0]
+    # Format input for BART NLI model with safe truncation
+    premise_clean = (premise or "").strip()[:600]
+    input_text = f"{premise_clean} </s></s> {hypothesis.strip()}"
+    output = _nli_pipeline(input_text, truncation=True, max_length=512)[0]
 
     return {
         "label": output["label"],        
