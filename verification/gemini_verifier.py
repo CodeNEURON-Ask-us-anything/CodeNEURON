@@ -2,17 +2,17 @@ import os
 import json
 import re
 
-# Fallback default API key provided in the starter template
-DEFAULT_API_KEY = "AIzaSyDVpdeXaCrNXXFSHuxbR_H3ZOVfNkCUk9Q"
-
 def get_gemini_model(api_key: str = None):
     """
     Configures and returns a Gemini model instance.
-    Uses the provided key, environment variable, or default key in order.
+    Resolves the API key from the explicit argument or the GEMINI_API_KEY
+    environment variable. Returns None if no key is available.
     """
     import google.generativeai as genai
-    
-    key = api_key or os.environ.get("GEMINI_API_KEY") or DEFAULT_API_KEY
+
+    key = api_key or os.environ.get("GEMINI_API_KEY")
+    if not key:
+        return None
     try:
         genai.configure(api_key=key)
         return genai.GenerativeModel("models/gemini-2.5-flash")

@@ -52,6 +52,21 @@ MOCK_EVIDENCE_DB = [
 ]
 
 from ddgs import DDGS
+from datetime import datetime
+
+_OFFICIAL_SLDS = {"gov", "mil", "edu", "ac"}  # second-level labels used in country-code forms
+
+
+def _is_official_suffix(hostname: str) -> bool:
+    """
+    Returns True for hostnames with an official TLD or country-code variant.
+    Handles .gov, .mil, .edu directly and patterns like .gov.in, .ac.in, .edu.au.
+    """
+    parts = hostname.split(".")
+    if parts[-1] in {"gov", "mil", "edu"}:
+        return True
+    return len(parts) >= 3 and len(parts[-1]) == 2 and parts[-2] in _OFFICIAL_SLDS
+
 
 
 def get_domain_score(url: str) -> int:
@@ -64,7 +79,11 @@ def get_domain_score(url: str) -> int:
     try:
         parsed = urllib.parse.urlparse(url)
         hostname = (parsed.hostname or "").lower()
-        
+
+        # Country-code government / academic domains (.gov.in, .ac.in, .edu.au, etc.)
+        if _is_official_suffix(hostname) or hostname == "nic.in" or hostname.endswith(".nic.in"):
+            return 100
+
         # Check High Trust
         for domain in HIGH_TRUST_DOMAINS:
             if domain.startswith("."):
@@ -105,13 +124,14 @@ def calculate_evidence_score(evidence: dict) -> float:
     if not year:
         # Extract 4 digit years from snippet
         years = [int(y) for y in re.findall(r'\b(20\d{2})\b', text)]
-        valid_years = [y for y in years if y <= 2026] # Environment simulated up to 2026
+        current_year = datetime.now().year
+        valid_years = [y for y in years if y <= current_year]
         if valid_years:
             year = max(valid_years)
             
     recency_bonus = 0
     if year:
-        recency_bonus = max(0, 50 - (2026 - year) * 10)
+        recency_bonus = max(0, 50 - (datetime.now().year - year) * 10)
         
     return domain_score + recency_bonus
 

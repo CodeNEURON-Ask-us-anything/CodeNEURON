@@ -45,7 +45,7 @@ def evaluate_math_claim(claim: str):
     Returns a dict with verdict, credibility_score, and explanation if it is a math claim, else None.
     """
     clean_claim = claim.strip().lower().rstrip('.')
-    
+    clean_claim = re.sub(r'^(the|a|an)\s+', '', clean_claim)  # strip "the integral of ..." → "integral of ..."
     # Heuristic to prevent English sentences from being parsed as algebraic equations:
     # A valid math claim should contain at least one number, or explicit math operators/functions.
     has_math = bool(re.search(r'\d', clean_claim)) or bool(re.search(r'[\+\-\*/\^]|integr|sqrt|sin|cos|tan', clean_claim))

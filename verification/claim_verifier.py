@@ -9,6 +9,17 @@ import os
 import concurrent.futures
 
 
+def majority_verdict(verdict_counts: dict) -> str:
+    """
+    Plurality vote over SUPPORTED / CONTRADICTED / NOT_ENOUGH_INFO.
+    A tie for first place is NOT resolved in favour of any verdict: it returns
+    NOT_ENOUGH_INFO, so disagreement between agents never silently becomes SUPPORTED.
+    """
+    top = max(verdict_counts.values())
+    leaders = [v for v, c in verdict_counts.items() if c == top]
+    return leaders[0] if len(leaders) == 1 else "NOT_ENOUGH_INFO"
+
+
 def relevance_score(claim: str, evidence: str) -> float:
     """
     Computes a simple word overlap relevance rating between claim and evidence.
@@ -136,7 +147,7 @@ def verify_fact(claim: str, mode: str = "nli", gemini_api_key: str = None,
             total_confidence += r["confidence"]
             explanations.append(r["explanation"])
             
-        final_verdict = max(verdict_counts, key=verdict_counts.get)
+        final_verdict = majority_verdict(verdict_counts)
         final_confidence = total_confidence / len(results)
 
         # Clean explanation: show which models agreed
@@ -321,7 +332,7 @@ def batch_verify_facts(claims: list, mode: str = "nli", gemini_api_key: str = No
                     total_confidence += r["confidence"]
                     explanations.append(r["explanation"])
                     
-                final_verdict = max(verdict_counts, key=verdict_counts.get)
+                final_verdict = majority_verdict(verdict_counts)
                 final_confidence = total_confidence / len(all_model_results)
                 
                 # Clean explanation
